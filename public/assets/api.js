@@ -168,17 +168,24 @@
     const invNo = isEdit ? data.invoiceNumber : await generateInvoiceNumber();
 
     let createdAt = nowIso();
+    let existingStatus = null;
     if (isEdit) {
-      const existing = await sb.from('invoices').select('created_at').eq('invoice_number', invNo).maybeSingle();
-      if (existing.data && existing.data.created_at) createdAt = existing.data.created_at;
+      const existing = await sb.from('invoices').select('created_at, status').eq('invoice_number', invNo).maybeSingle();
+      if (existing.data) {
+        if (existing.data.created_at) createdAt = existing.data.created_at;
+        existingStatus = existing.data.status;
+      }
     }
+    // Form Edit Invoice tidak punya field status, jadi JANGAN timpa status
+    // yang sudah ada (mis. Paid) hanya karena data.status kosong.
+    const status = data.status || existingStatus || 'Unpaid';
 
     ok(await sb.from('invoices').upsert({
       invoice_number: invNo, invoice_date: data.invoiceDate || today(), due_date: data.dueDate || null,
       client_name: data.clientName, client_address: data.clientAddress || '', client_email: data.clientEmail || '',
       client_phone: data.clientPhone || '', items_json: data.items, notes: data.notes || '',
       tax_percent: taxPercent, discount, subtotal, tax_amount: taxAmount, total,
-      status: data.status || 'Unpaid', created_at: createdAt,
+      status, created_at: createdAt,
       company_id: data.companyId || null, cashier_id: data.cashierId || null
     }));
     return { success: true, invoiceNumber: invNo, total };
