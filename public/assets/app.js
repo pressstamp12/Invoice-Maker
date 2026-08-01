@@ -16,6 +16,7 @@ let _importParsedRows = null;
 let hppAccounts = [], hppCurrentInv = '';
 let listFilterStatus = 'all', listFilterSource = 'all', listFilterCashier = 'all', _allInvoices = [];
 let cashFilterType = 'all', cashFilterAccount = 'all', _payInvoiceNumber = '';
+let cashFilterInvoice = '';
 let bankAccountsCache = [];
 let listFilterCompany = 'all';
 let customersCache = [];
@@ -1007,12 +1008,30 @@ function drawTrendChart(monthly) {
     data.addColumn('string', 'Bulan');
     ['Omzet', 'HPP', 'Profit'].forEach(c => data.addColumn('number', c));
     monthly.forEach(m => data.addRow([m.month, m.omzet, m.hpp, m.profit]));
+    const isMobile = window.innerWidth < 640;
     new google.visualization.ColumnChart($('trendChart')).draw(data, {
-      legend: { position: 'top' }, chartArea: { width: '85%', height: '70%' },
-      colors: ['#1e3a5f', '#93c5fd', '#16a34a'], bar: { groupWidth: '70%' }
+      legend: { position: 'top', textStyle: { fontSize: 11 } },
+      chartArea: { width: isMobile ? '80%' : '85%', height: isMobile ? '58%' : '70%', top: 28, bottom: isMobile ? 78 : 40 },
+      colors: ['#1e3a5f', '#93c5fd', '#16a34a'],
+      bar: { groupWidth: isMobile ? '75%' : '70%' },
+      hAxis: {
+        textStyle: { fontSize: isMobile ? 9 : 11 },
+        slantedText: isMobile,
+        slantedTextAngle: 60,
+        maxAlternation: 1,
+        showTextEvery: 1
+      },
+      vAxis: { textStyle: { fontSize: isMobile ? 9 : 11 }, format: 'short' }
     });
   } catch (e) {}
 }
+let _chartResizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(_chartResizeTimer);
+  _chartResizeTimer = setTimeout(() => {
+    if (_lastDashboardData) drawTrendChart(_lastDashboardData.monthlyData || []);
+  }, 300);
+});
 
 /* ---------------- TAB KAS ---------------- */
 function loadCashTab() {
@@ -1020,6 +1039,7 @@ function loadCashTab() {
   const filter = { sortBy: cashSortBy };
   if (cashFilterType !== 'all') filter.type = cashFilterType;
   if (cashFilterAccount !== 'all') filter.accountId = cashFilterAccount;
+  if (cashFilterInvoice.trim()) filter.invoiceNumber = cashFilterInvoice.trim();
   $('accountBalanceWrap').innerHTML = '<p class="muted">Memuat...</p>';
   $('cashFlowWrap').innerHTML = '<p class="muted">Memuat...</p>';
   run('getCashData', [filter], d => {
@@ -1030,8 +1050,23 @@ function loadCashTab() {
     renderAccountBalances(d.accounts);
     renderAccountList(d.accounts);
     populateCashAccountFilter(d.accounts);
+    renderCashInvoiceSummary(d);
     renderCashFlow(d.flows);
   }, { loading: false });
+}
+function renderCashInvoiceSummary(d) {
+  const box = $('cashInvoiceSummary');
+  if (!box) return;
+  if (!cashFilterInvoice.trim()) { box.innerHTML = ''; return; }
+  const selisih = (d.filteredIn || 0) - (d.filteredOut || 0);
+  const jumlah = (d.flows || []).length;
+  box.innerHTML = `<div class="import-summary" style="background:#dbeafe">
+    Invoice cocok "<strong>${escapeHtml(cashFilterInvoice.trim())}</strong>": <strong>${jumlah}</strong> transaksi kas ditemukan.
+    Uang Masuk: <strong class="profit-positive">${formatMoney(d.filteredIn)}</strong> ·
+    Uang Keluar: <strong class="profit-negative">${formatMoney(d.filteredOut)}</strong> ·
+    Selisih: <strong class="${selisih >= 0 ? 'profit-positive' : 'profit-negative'}">${formatMoney(selisih)}</strong>
+    ${jumlah === 0 ? '<br><span class="muted">Belum ada transaksi kas tercatat untuk invoice ini.</span>' : ''}
+  </div>`;
 }
 function renderAccountBalances(accounts) {
   const wrap = $('accountBalanceWrap');
@@ -1107,6 +1142,15 @@ function bindCashFilterHandlers() {
   if (fs && !fs.dataset.bound) {
     fs.dataset.bound = '1';
     fs.addEventListener('change', () => { cashSortBy = fs.value; loadCashTab(); });
+  }
+  const fi = $('cashFilterInvoice');
+  if (fi && !fi.dataset.bound) {
+    fi.dataset.bound = '1';
+    let t;
+    fi.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => { cashFilterInvoice = fi.value; loadCashTab(); }, 350);
+    });
   }
   const form = $('accountForm');
   if (form && !form.dataset.bound) {

@@ -267,6 +267,23 @@
   }
 
   /* ============ PREVIEW / PDF / JPG (pengganti HtmlService + Drive) ============ */
+  async function toDataUri(url) {
+    if (!url) return url;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return url;
+      const blob = await res.blob();
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return url; // fallback: kalau gagal (server tidak izinkan CORS sama sekali), tetap pakai URL asli
+    }
+  }
+
   async function buildInvoiceHtml(invNo) {
     const invoice = await getInvoiceByNumber(invNo);
     const company = await getCompanyById(invoice.companyId);
@@ -274,7 +291,18 @@
     const cashier = invoice.cashierId ? await getCashierById(invoice.cashierId) : null;
     const currency = company.currency || 'Rp';
     const bankLine = defBank ? formatBankLine(defBank) : (company.bank || '');
-    return window.renderInvoiceTemplate({ invoice, company, cashier, currency, bankLine });
+
+    // Ubah logo & tanda tangan jadi data URI dulu -> supaya render ke JPG/PDF selalu
+    // konsisten dengan yang tampil di preview, tidak tergantung izin CORS server gambar
+    // saat proses capture (html2canvas) berlangsung.
+    const [logoData, sigData] = await Promise.all([
+      toDataUri(company.logoUrl),
+      cashier ? toDataUri(cashier.signatureUrl) : Promise.resolve(null)
+    ]);
+    const companyForRender = Object.assign({}, company, { logoUrl: logoData });
+    const cashierForRender = cashier ? Object.assign({}, cashier, { signatureUrl: sigData }) : null;
+
+    return window.renderInvoiceTemplate({ invoice, company: companyForRender, cashier: cashierForRender, currency, bankLine });
   }
   async function getInvoicePreviewHtml(invNo) { return buildInvoiceHtml(invNo); }
 
@@ -659,6 +687,10 @@
     if (filter.accountId) flows = flows.filter(f => f.accountId === filter.accountId || f.toAccountId === filter.accountId);
     if (filter.type) flows = flows.filter(f => f.type === filter.type);
     if (filter.month) flows = flows.filter(f => String(f.date).slice(0, 7) === filter.month);
+    if (filter.invoiceNumber) {
+      const q = filter.invoiceNumber.toLowerCase();
+      flows = flows.filter(f => (f.invoiceNumber || '').toLowerCase().indexOf(q) !== -1);
+    }
 
     const sortBy = filter.sortBy || 'date';
     if (sortBy === 'created') {
@@ -689,7 +721,10 @@
       if (a.active) totalBalance += b;
       return { accountId: a.accountId, name: a.name, type: a.type, active: a.active, openingBalance: a.openingBalance, balance: b };
     });
-    return { accounts: accountsOut, flows: flowsOut, totalBalance, totalIn, totalOut, filter };
+    let filteredIn = 0, filteredOut = 0;
+    flows.forEach(f => { if (f.type === 'in') filteredIn += f.amount; else if (f.type === 'out') filteredOut += f.amount; });
+
+    return { accounts: accountsOut, flows: flowsOut, totalBalance, totalIn, totalOut, filteredIn, filteredOut, filter };
   }
   async function getActiveAccounts() {
     return (await getAccountsRaw()).filter(a => a.active).map(a => ({ accountId: a.accountId, name: a.name }));

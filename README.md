@@ -155,6 +155,29 @@ Fitur baru:
   dan ketik nama klien yang sama (repeat order), email/telepon/alamat
   otomatis terisi.
 
+## Update lanjutan: tanda tangan JPG, filter kas per invoice, grafik mobile
+
+- **Tanda tangan/logo hilang di JPG/PDF** — sekarang sebelum di-capture, gambar
+  logo & tanda tangan diambil lewat `fetch()` dan diubah jadi data langsung
+  (data URI), bukan cuma menunggu `<img>` selesai load. Ini jauh lebih
+  andal karena capture-nya tidak lagi tergantung timing/CORS saat proses
+  render berlangsung. **Catatan:** kalau URL gambar Anda di server yang benar-benar
+  memblokir akses lintas-origin (tidak mengizinkan `fetch()` sama sekali),
+  sistem otomatis fallback ke URL asli — dalam kasus itu, upload gambar ke
+  Supabase Storage (bucket `invoice-files`) adalah solusi paling pasti.
+- **Filter kas per invoice** — di tab Kas sekarang ada kolom "Cari Nomor
+  Invoice". Ketik sebagian/seluruh nomor invoice (mis. "400" atau
+  "INV-2026-0400") untuk langsung lihat semua transaksi masuk & keluar milik
+  invoice itu, lengkap dengan ringkasan total masuk/keluar/selisihnya.
+- **Grafik tren lebih rapi di HP** — label bulan dimiringkan otomatis di
+  layar kecil supaya tidak menumpuk, angka disingkat (mis. "50rb"/"2jt"),
+  dan grafik otomatis digambar ulang saat HP diputar (landscape/portrait).
+
+Cara update: timpa `public/assets/api.js`, `public/assets/app.js`,
+`public/assets/style.css`, dan `public/index.html` di repo Anda dengan isi
+paket ini → commit → push. Tidak perlu ubah database (schema.sql tidak
+berubah di update ini).
+
 ## Menambah user/karyawan baru
 
 Supabase Dashboard → Authentication → Users → Add user (email + password).

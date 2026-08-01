@@ -284,6 +284,10 @@
               </div>
             </div>
             <div class="lf-group">
+              <span class="lf-label">Cari Nomor Invoice</span>
+              <input type="text" id="cashFilterInvoice" class="lf-select" placeholder="cth: 400 atau INV-2026-0400" style="min-width:180px">
+            </div>
+            <div class="lf-group">
               <span class="lf-label">Akun</span>
               <select id="cashFilterAccount" class="lf-select"><option value="all">Semua Akun</option></select>
             </div>
@@ -296,7 +300,8 @@
               </select>
             </div>
           </div>
-          <p class="hint">Urutkan berdasarkan "Nomor Invoice" untuk mengelompokkan transaksi per invoice — memudahkan cek invoice mana yang catatannya belum lengkap (misal HPP terisi tapi belum ada penerimaan, atau sebaliknya).</p>
+          <div id="cashInvoiceSummary"></div>
+          <p class="hint">Ketik nomor invoice di kolom "Cari Nomor Invoice" untuk melihat semua transaksi kas (masuk & keluar) milik invoice itu saja.</p>
           <div id="cashFlowWrap" class="cashflow-list"><p class="muted">Memuat...</p></div>
         </div>
       </section>
