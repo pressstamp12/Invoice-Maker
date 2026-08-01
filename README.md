@@ -110,8 +110,101 @@ menggunakan data yang sudah dimigrasikan.
   logika kas (brankas/pribadi/bank + transfer) — dipindahkan 1:1 dari
   `Code.gs` tanpa ada perubahan logika.
 
+## Update: perbaikan bug + fitur baru (baca kalau upgrade dari versi sebelumnya)
+
+Jika sebelumnya Anda sudah menjalankan `schema.sql`, cukup jalankan ulang
+**seluruh isi `schema.sql`** di SQL Editor (aman diulang — semua perintah
+pakai `IF NOT EXISTS`) untuk menambahkan tabel `customers` yang baru.
+
+Lalu timpa semua file di `public/` (terutama `assets/api.js`, `assets/app.js`,
+`assets/invoice-template.js`, `sw.js`, `index.html`) di repo GitHub Anda
+dengan isi dari paket ini → commit → push.
+
+**Setelah deploy, buka aplikasi (browser/PWA yang sudah ter-install) dan
+tutup-buka sekali** — service worker versi baru akan otomatis mengambil alih
+dan me-reload halaman sendiri; setelah itu update berikutnya akan mengalir
+otomatis tanpa perlu langkah manual ini lagi.
+
+Ringkasan perbaikan:
+- **Double input arus kas** — tombol Simpan (HPP, Terima Bayar, Kas manual)
+  sekarang terkunci saat proses berjalan, jadi tap ganda/koneksi lambat tidak
+  lagi mencatat transaksi dua kali.
+- **Status Lunas tanpa catatan kas** — klik badge status untuk menandai
+  Lunas sekarang otomatis mengarahkan ke modal "Terima Bayar" (supaya kas
+  selalu tercatat). Klik untuk membatalkan status Lunas tetap bisa langsung
+  (tidak menghapus histori kas yang sudah ada).
+- **Tanda tangan hilang di JPG** — sistem sekarang menunggu semua gambar
+  (logo & tanda tangan) selesai dimuat sebelum meng-capture, dan meminta
+  izin CORS ke server gambar. **Catatan:** kalau tanda tangan Anda di-host di
+  URL yang tidak mendukung CORS, tetap bisa gagal muncul di JPG/PDF meski
+  muncul normal di preview — solusi paling aman adalah upload gambar
+  tanda tangan/logo ke **Supabase Storage** (bucket `invoice-files` yang
+  sudah dibuat otomatis), lalu pakai Public URL-nya.
+- **Tampilan "kode aneh" saat buka app** — disebabkan cache PWA (service
+  worker) menyimpan file lama. Sekarang strategi cache diganti jadi
+  network-first (selalu ambil versi terbaru saat online) + auto-reload saat
+  ada update baru terdeploy.
+
+Fitur baru:
+- **Sortir arus kas** — di tab Kas, ada dropdown "Urutkan": Tanggal
+  Transaksi / Tanggal Dicatat / Nomor Invoice. Pilih "Nomor Invoice" untuk
+  mengelompokkan transaksi per invoice, memudahkan cek invoice mana yang
+  catatannya belum lengkap.
+- **Data customer tersimpan otomatis** — setiap invoice disimpan, nama +
+  email + telepon + alamat klien otomatis tersimpan. Saat buat invoice baru
+  dan ketik nama klien yang sama (repeat order), email/telepon/alamat
+  otomatis terisi.
+
 ## Menambah user/karyawan baru
 
 Supabase Dashboard → Authentication → Users → Add user (email + password).
 User baru langsung bisa login dan punya akses penuh yang sama (aplikasi ini
 didesain untuk 1 tim/toko, bukan multi-tenant terpisah).
+
+## 7. Notifikasi WhatsApp otomatis saat invoice LUNAS
+
+Fitur ini mengirim detail invoice ke grup WhatsApp otomatis setiap kali status
+invoice berubah jadi "Paid" — lewat provider **Fonnte** (karena WhatsApp
+Business API resmi tidak bisa kirim ke grup).
+
+### 7.1 Siapkan akun Fonnte
+1. Daftar di https://fonnte.com, hubungkan 1 nomor WA (scan QR) yang sudah
+   jadi anggota grup tujuan.
+2. Salin **Token** device dari dashboard Fonnte.
+3. Cari **Group ID** grup tujuan lewat menu daftar grup di dashboard Fonnte
+   (format umum: `120xxxxxxxxx-xxxxxxxxxx@g.us`).
+
+### 7.2 Install Supabase CLI (sekali saja di komputer Anda)
+```bash
+npm install -g supabase
+supabase login
+supabase link --project-ref YOUR-PROJECT-REF
+```
+`YOUR-PROJECT-REF` bisa dilihat di URL dashboard project Anda.
+
+### 7.3 Set secret & deploy Edge Function
+```bash
+supabase secrets set FONNTE_TOKEN=isi_token_fonnte_anda
+supabase secrets set FONNTE_GROUP_ID=isi_group_id_anda
+
+supabase functions deploy notify-invoice-paid --no-verify-jwt
+```
+`--no-verify-jwt` dipakai karena function ini dipanggil oleh trigger database
+(bukan oleh pengguna lewat browser), jadi tidak membawa token login pengguna.
+
+### 7.4 Pasang trigger database
+1. Buka `supabase/notify_trigger.sql`, ganti `YOUR-PROJECT-REF` pada baris
+   `url := 'https://YOUR-PROJECT-REF.supabase.co/functions/v1/notify-invoice-paid'`
+   dengan project ref Anda.
+2. Jalankan isi file itu di **SQL Editor** Supabase.
+
+### 7.5 Uji coba
+Di aplikasi, tandai satu invoice sebagai "Lunas" (klik badge status di Daftar
+Invoice, atau lewat modal "Terima Bayar"). Pesan otomatis akan masuk ke grup
+WhatsApp dalam beberapa detik. Kalau tidak masuk, cek log Edge Function lewat:
+```bash
+supabase functions logs notify-invoice-paid
+```
+Penyebab paling umum: Group ID salah format, token Fonnte kadaluarsa/device
+ter-disconnect (perlu scan ulang QR di dashboard Fonnte), atau nomor WA
+Fonnte belum jadi anggota grup tujuan.

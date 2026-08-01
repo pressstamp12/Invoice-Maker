@@ -18,6 +18,8 @@ let listFilterStatus = 'all', listFilterSource = 'all', listFilterCashier = 'all
 let cashFilterType = 'all', cashFilterAccount = 'all', _payInvoiceNumber = '';
 let bankAccountsCache = [];
 let listFilterCompany = 'all';
+let customersCache = [];
+let cashSortBy = 'date';
 
 /* ---------------- HELPERS ---------------- */
 const $ = id => document.getElementById(id);
@@ -26,17 +28,24 @@ const setVal = (id, v) => { $(id).value = v; };
 const setTxt = (id, v) => { $(id).textContent = v; };
 const show = (id, b) => $(id).classList.toggle('hidden', !b);
 
-/* Wrapper pengganti google.script.run: run(fn, args, onOk, {loading, onErr}) */
+/* Wrapper pengganti google.script.run: run(fn, args, onOk, {loading, onErr, lockKey}) */
+const _submitLocks = new Set();
 function run(fnName, args, onOk, opts) {
   opts = opts || {};
+  const lockKey = opts.lockKey;
+  if (lockKey) {
+    if (_submitLocks.has(lockKey)) return; // sedang diproses — abaikan tap/klik ganda (anti double input)
+    _submitLocks.add(lockKey);
+  }
   const loading = opts.loading !== false;
   if (loading) showLoading(true);
   const fn = window.API[fnName];
-  if (!fn) { console.error('API tidak punya fungsi:', fnName); return; }
+  if (!fn) { console.error('API tidak punya fungsi:', fnName); if (lockKey) _submitLocks.delete(lockKey); return; }
   Promise.resolve(fn.apply(null, args || []))
-    .then(res => { if (loading) showLoading(false); onOk && onOk(res); })
+    .then(res => { if (loading) showLoading(false); if (lockKey) _submitLocks.delete(lockKey); onOk && onOk(res); })
     .catch(err => {
       if (loading) showLoading(false);
+      if (lockKey) _submitLocks.delete(lockKey);
       opts.onErr ? opts.onErr(err) : toast(err.message, true);
     });
 }
@@ -77,8 +86,11 @@ function initApp() {
   initItemsTable();
   setVal('invoiceDate', todayStr());
   loadItemsCache();
+  loadCustomersCache();
   loadSettings();
   loadDashboard();
+
+  $('clientName').addEventListener('change', onClientNameChange);
 
   $('addItemBtn').addEventListener('click', () => addItemRow());
   $('resetFormBtn').addEventListener('click', resetForm);
@@ -120,6 +132,14 @@ document.addEventListener('DOMContentLoaded', () => {
   initAuth();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+    // Kalau ada versi baru terdeploy, reload otomatis sekali supaya tidak
+    // ada file lama/campuran ke-cache (pemicu bug "tampilan kode aneh").
+    let _swRefreshed = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (_swRefreshed) return;
+      _swRefreshed = true;
+      window.location.reload();
+    });
   }
 });
 
@@ -132,7 +152,7 @@ function loadGoogleCharts() {
 
 /* ---------------- TABS ---------------- */
 function initTabs() {
-  const map = { list: loadInvoiceList, items: loadItemsList, create: loadItemsCache,
+  const map = { list: loadInvoiceList, items: loadItemsList, create: () => { loadItemsCache(); loadCustomersCache(); },
     dashboard: loadDashboard, cash: loadCashTab,
     settings: () => { loadCompanyList(); loadCashierList(); initImportUI(); } };
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -407,8 +427,9 @@ function onSubmitInvoice(e) {
   };
   run('saveInvoice', [data], res => {
     toast('Invoice ' + res.invoiceNumber + ' tersimpan'); resetForm();
+    loadCustomersCache();
     document.querySelector('.tab-btn[data-tab="list"]').click();
-  });
+  }, { lockKey: 'saveInvoice:' + (data.invoiceNumber || 'new') });
 }
 function resetForm() {
   $('invoiceForm').reset(); setVal('editInvoiceNumber', '');
@@ -516,7 +537,16 @@ function renderInvoiceList() {
   }).join('');
 }
 function toggleStatus(inv, current) {
-  run('updateInvoiceStatus', [inv, current === 'Paid' ? 'Unpaid' : 'Paid'], () => loadInvoiceList());
+  if (current === 'Paid') {
+    // Batalkan status Lunas — ini aksi koreksi, tidak menghapus histori kas yang sudah ada
+    if (!confirm('Ubah status invoice ' + inv + ' jadi Belum Lunas? (Catatan kas yang sudah ada tidak akan otomatis dihapus)')) return;
+    run('updateInvoiceStatus', [inv, 'Unpaid'], () => loadInvoiceList(), { lockKey: 'toggleStatus:' + inv });
+  } else {
+    // Supaya status Lunas SELALU sinkron dengan arus kas, tandai Lunas wajib lewat "Terima Bayar"
+    const invObj = _allInvoices.find(i => i.invoiceNumber === inv);
+    toast('Catat dulu penerimaannya supaya arus kas tetap sinkron');
+    openPayModal(inv, invObj ? invObj.total : 0);
+  }
 }
 function deleteInvoiceUi(inv) {
   if (!confirm('Hapus invoice ' + inv + '?')) return;
@@ -628,7 +658,7 @@ function saveHppModal() {
   });
   run('savePurchases', [hppCurrentInv, items, others], () => {
     toast('HPP tersimpan & kas tercatat'); closeHppModal(); loadInvoiceList();
-  });
+  }, { lockKey: 'savePurchases:' + hppCurrentInv });
 }
 function closeHppModal() { $('hppModalOverlay').classList.add('hidden'); }
 
@@ -694,8 +724,12 @@ function renderPreviewToCanvas() {
   return new Promise((resolve, reject) => {
     const iframe = $('previewIframe');
     if (!iframe || !iframe.contentDocument) { reject(new Error('Preview belum siap')); return; }
-    html2canvas(iframe.contentDocument.body, { scale: 2, backgroundColor: '#ffffff', useCORS: true, allowTaint: true })
-      .then(resolve).catch(reject);
+    const doc = iframe.contentDocument;
+    const wait = window.waitImagesLoaded ? window.waitImagesLoaded(doc, 3000) : Promise.resolve();
+    Promise.resolve(wait).then(() => {
+      html2canvas(doc.body, { scale: 2, backgroundColor: '#ffffff', useCORS: true, allowTaint: true })
+        .then(resolve).catch(reject);
+    });
   });
 }
 function downloadJpgFromPreview() {
@@ -731,6 +765,25 @@ function copyShareLink() {
   const input = $('shareLinkInput');
   input.select(); input.setSelectionRange(0, 99999);
   try { document.execCommand('copy'); toast('Link disalin'); } catch (e) { toast('Salin manual', true); }
+}
+
+/* ---------------- CUSTOMER (autofill repeat order) ---------------- */
+function loadCustomersCache() {
+  run('getCustomers', [], list => {
+    customersCache = list || [];
+    const dl = $('clientDatalist');
+    if (dl) dl.innerHTML = customersCache.map(c => `<option value="${escapeHtml(c.name)}">`).join('');
+  }, { loading: false });
+}
+function onClientNameChange() {
+  const name = val('clientName').trim();
+  const match = customersCache.find(c => c.name.toLowerCase() === name.toLowerCase());
+  if (match) {
+    if (!val('clientPhone').trim()) setVal('clientPhone', match.phone || '');
+    if (!val('clientEmail').trim()) setVal('clientEmail', match.email || '');
+    if (!val('clientAddress').trim()) setVal('clientAddress', match.address || '');
+    toast('Data klien "' + match.name + '" otomatis terisi');
+  }
 }
 
 /* ---------------- ITEM MASTER ---------------- */
@@ -964,7 +1017,7 @@ function drawTrendChart(monthly) {
 /* ---------------- TAB KAS ---------------- */
 function loadCashTab() {
   bindCashFilterHandlers();
-  const filter = {};
+  const filter = { sortBy: cashSortBy };
   if (cashFilterType !== 'all') filter.type = cashFilterType;
   if (cashFilterAccount !== 'all') filter.accountId = cashFilterAccount;
   $('accountBalanceWrap').innerHTML = '<p class="muted">Memuat...</p>';
@@ -1026,6 +1079,8 @@ function renderCashFlow(flows) {
           + (f.invoiceNumber ? ' · ' + escapeHtml(f.invoiceNumber) : '')
           + (f.note ? ' · ' + escapeHtml(f.note) : '');
     }
+    const recordedAt = f.createdAt ? new Date(f.createdAt).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+    if (recordedAt) sub += ' · dicatat ' + escapeHtml(recordedAt);
     const isHpp = f.sourceType === 'hpp';
     const delBtn = isHpp
       ? `<button class="cf-del" title="Kas HPP — kelola lewat modal HPP invoice terkait" disabled style="opacity:.35;cursor:not-allowed">🔒</button>`
@@ -1047,6 +1102,11 @@ function bindCashFilterHandlers() {
   if (fa && !fa.dataset.bound) {
     fa.dataset.bound = '1';
     fa.addEventListener('change', () => { cashFilterAccount = fa.value; loadCashTab(); });
+  }
+  const fs = $('cashSortBy');
+  if (fs && !fs.dataset.bound) {
+    fs.dataset.bound = '1';
+    fs.addEventListener('change', () => { cashSortBy = fs.value; loadCashTab(); });
   }
   const form = $('accountForm');
   if (form && !form.dataset.bound) {
@@ -1115,7 +1175,7 @@ function saveCashModal() {
   if (!data.accountId) { toast('Pilih akun. Tambahkan akun dulu bila belum ada.', true); return; }
   if (data.amount <= 0) { toast('Jumlah harus lebih dari 0', true); return; }
   if (type === 'transfer' && data.accountId === data.toAccountId) { toast('Akun asal & tujuan tidak boleh sama', true); return; }
-  run('saveCashFlow', [data], () => { toast('Transaksi kas tersimpan'); closeCashModal(); loadCashTab(); });
+  run('saveCashFlow', [data], () => { toast('Transaksi kas tersimpan'); closeCashModal(); loadCashTab(); }, { lockKey: 'saveCashFlow' });
 }
 function deleteCashFlowUi(id) {
   if (!confirm('Hapus transaksi kas ini?')) return;
@@ -1138,7 +1198,7 @@ function savePayModal() {
     note: val('payNote'), markPaid: $('payMarkPaid').checked };
   if (!payload.accountId) { toast('Pilih akun penerima. Tambahkan akun di tab Kas.', true); return; }
   if (payload.amount <= 0) { toast('Jumlah harus lebih dari 0', true); return; }
-  run('recordInvoicePayment', [payload], () => { toast('Penerimaan tersimpan'); closePayModal(); loadInvoiceList(); });
+  run('recordInvoicePayment', [payload], () => { toast('Penerimaan tersimpan'); closePayModal(); loadInvoiceList(); }, { lockKey: 'recordInvoicePayment:' + _payInvoiceNumber });
 }
 
 /* ---------------- IMPOR EXCEL ---------------- */

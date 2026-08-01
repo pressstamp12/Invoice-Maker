@@ -188,7 +188,31 @@
       status, created_at: createdAt,
       company_id: data.companyId || null, cashier_id: data.cashierId || null
     }));
+
+    try { await upsertCustomerFromInvoice(data); } catch (e) { console.warn('Gagal simpan data customer:', e.message); }
+
     return { success: true, invoiceNumber: invNo, total };
+  }
+
+  /* ============ CUSTOMERS (untuk autofill repeat order) ============ */
+  async function getCustomers() {
+    const data = ok(await sb.from('customers').select('*').order('name'));
+    return data.map(r => ({ customerId: r.customer_id, name: r.name, phone: r.phone || '', email: r.email || '', address: r.address || '' }));
+  }
+  async function upsertCustomerFromInvoice(data) {
+    if (!data.clientName || !data.clientName.trim()) return;
+    const name = data.clientName.trim();
+    const { data: existing } = await sb.from('customers').select('customer_id').ilike('name', name).maybeSingle();
+    if (existing) {
+      ok(await sb.from('customers').update({
+        phone: data.clientPhone || '', email: data.clientEmail || '', address: data.clientAddress || '', updated_at: nowIso()
+      }).eq('customer_id', existing.customer_id));
+    } else {
+      const id = await nextId('customers', 'customer_id', 'CLI-');
+      ok(await sb.from('customers').insert({
+        customer_id: id, name, phone: data.clientPhone || '', email: data.clientEmail || '', address: data.clientAddress || ''
+      }));
+    }
   }
 
   async function getInvoiceList() {
@@ -254,13 +278,26 @@
   }
   async function getInvoicePreviewHtml(invNo) { return buildInvoiceHtml(invNo); }
 
+  async function waitImagesLoaded(doc, timeoutMs) {
+    const imgs = Array.from((doc && doc.images) || []);
+    if (!imgs.length) return;
+    await Promise.race([
+      Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+        img.addEventListener('load', res, { once: true });
+        img.addEventListener('error', res, { once: true });
+      }))),
+      new Promise(res => setTimeout(res, timeoutMs || 3000))
+    ]);
+  }
+  window.waitImagesLoaded = waitImagesLoaded;
+
   async function generateInvoicePdf(invNo) {
     const html = await buildInvoiceHtml(invNo);
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:780px;border:0;';
     document.body.appendChild(iframe);
     iframe.contentDocument.open(); iframe.contentDocument.write(html); iframe.contentDocument.close();
-    await new Promise(r => setTimeout(r, 250));
+    await waitImagesLoaded(iframe.contentDocument, 3000);
     const canvas = await html2canvas(iframe.contentDocument.body, { scale: 2, backgroundColor: '#fff', useCORS: true, allowTaint: true });
     document.body.removeChild(iframe);
     const { jsPDF } = window.jspdf;
@@ -618,16 +655,29 @@
     const [accounts, balances, allFlows] = await Promise.all([getAccountsRaw(), computeAccountBalances(), getCashFlowRaw()]);
     const nameById = {}; accounts.forEach(a => { nameById[a.accountId] = a.name; });
 
-    let flows = allFlows;
+    let flows = allFlows.slice();
     if (filter.accountId) flows = flows.filter(f => f.accountId === filter.accountId || f.toAccountId === filter.accountId);
     if (filter.type) flows = flows.filter(f => f.type === filter.type);
     if (filter.month) flows = flows.filter(f => String(f.date).slice(0, 7) === filter.month);
-    flows.sort((a, b) => a.date === b.date ? String(b.flowId).localeCompare(String(a.flowId)) : String(b.date).localeCompare(String(a.date)));
+
+    const sortBy = filter.sortBy || 'date';
+    if (sortBy === 'created') {
+      flows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    } else if (sortBy === 'invoice') {
+      flows.sort((a, b) => {
+        const ai = a.invoiceNumber || '\uffff', bi = b.invoiceNumber || '\uffff';
+        if (ai !== bi) return ai.localeCompare(bi);
+        return String(b.date).localeCompare(String(a.date));
+      });
+    } else {
+      flows.sort((a, b) => a.date === b.date ? String(b.flowId).localeCompare(String(a.flowId)) : String(b.date).localeCompare(String(a.date)));
+    }
 
     const flowsOut = flows.map(f => ({
       flowId: f.flowId, date: f.date, type: f.type, accountId: f.accountId, accountName: nameById[f.accountId] || f.accountId,
       toAccountId: f.toAccountId, toAccountName: f.toAccountId ? (nameById[f.toAccountId] || f.toAccountId) : '',
-      amount: f.amount, category: f.category, note: f.note, invoiceNumber: f.invoiceNumber, sourceType: f.sourceType
+      amount: f.amount, category: f.category, note: f.note, invoiceNumber: f.invoiceNumber, sourceType: f.sourceType,
+      createdAt: f.createdAt
     }));
 
     let totalIn = 0, totalOut = 0;
@@ -674,7 +724,7 @@
     getCompanies, saveCompany, deleteCompany,
     getCashiers, saveCashier, deleteCashier,
     getSettings, saveGlobalSettings,
-    getItems, saveItem, deleteItem,
+    getItems, saveItem, deleteItem, getCustomers,
     saveInvoice, getInvoiceList, getInvoiceByNumber, deleteInvoice, updateInvoiceStatus,
     getInvoicePreviewHtml, generateInvoicePdf, savePdfToDrive, saveJpgToDrive,
     getPurchasesByInvoice, savePurchases, getHppModalData,

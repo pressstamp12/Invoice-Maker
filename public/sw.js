@@ -1,4 +1,4 @@
-const CACHE_NAME = 'invoice-maker-v1';
+const CACHE_NAME = 'invoice-maker-v2';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -25,21 +25,22 @@ self.addEventListener('activate', event => {
   );
 });
 
-// App-shell (HTML/CSS/JS lokal): cache-first supaya cepat & bisa dibuka offline.
-// Request lain (Supabase API, CDN, dst): selalu ambil dari network agar data selalu fresh.
+// STRATEGI: network-first untuk file app-shell lokal (HTML/CSS/JS).
+// Ini PENTING: memastikan pengguna SELALU dapat versi kode terbaru saat online
+// (mencegah bug "kode/tampilan lama nyangkut" akibat cache basi).
+// Kalau offline, baru fallback ke cache supaya app tetap bisa dibuka.
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   const isSameOrigin = url.origin === self.location.origin;
   if (!isSameOrigin || event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(res => {
+    fetch(event.request)
+      .then(res => {
         const clone = res.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         return res;
-      }).catch(() => cached);
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });

@@ -133,10 +133,12 @@
           <div class="card">
             <h2>Info Klien</h2>
             <div class="grid-2">
-              <div class="field"><label>Nama Klien *</label><input type="text" id="clientName" required></div>
+              <div class="field"><label>Nama Klien *</label><input type="text" id="clientName" list="clientDatalist" required></div>
               <div class="field"><label>Email Klien</label><input type="email" id="clientEmail"></div>
               <div class="field"><label>Telepon Klien</label><input type="text" id="clientPhone"></div>
               <div class="field"><label>Alamat Klien</label><input type="text" id="clientAddress"></div>
+              <datalist id="clientDatalist"></datalist>
+              <p class="hint full" style="grid-column:1/-1;margin:-4px 0 0">Ketik nama klien yang pernah order sebelumnya — email/telepon/alamat otomatis terisi.</p>
             </div>
           </div>
 
@@ -285,7 +287,16 @@
               <span class="lf-label">Akun</span>
               <select id="cashFilterAccount" class="lf-select"><option value="all">Semua Akun</option></select>
             </div>
+            <div class="lf-group">
+              <span class="lf-label">Urutkan</span>
+              <select id="cashSortBy" class="lf-select">
+                <option value="date">Tanggal Transaksi</option>
+                <option value="created">Tanggal Dicatat</option>
+                <option value="invoice">Nomor Invoice</option>
+              </select>
+            </div>
           </div>
+          <p class="hint">Urutkan berdasarkan "Nomor Invoice" untuk mengelompokkan transaksi per invoice — memudahkan cek invoice mana yang catatannya belum lengkap (misal HPP terisi tapi belum ada penerimaan, atau sebaliknya).</p>
           <div id="cashFlowWrap" class="cashflow-list"><p class="muted">Memuat...</p></div>
         </div>
       </section>

@@ -18,7 +18,7 @@ window.renderInvoiceTemplate = function ({ invoice, company, cashier, currency, 
     </tr>`).join('');
 
   const signatureHtml = (cashier && cashier.signatureUrl)
-    ? `<img class="sign-img" src="${cashier.signatureUrl}" alt="ttd"><div class="sign-line">${escapeHtmlT(cashier.name)}</div>`
+    ? `<img class="sign-img" src="${cashier.signatureUrl}" alt="ttd" crossorigin="anonymous"><div class="sign-line">${escapeHtmlT(cashier.name)}</div>`
     : `<div class="sign-line no-img">${escapeHtmlT(cashier ? cashier.name : company.name)}</div>`;
 
   return `<!DOCTYPE html>
@@ -87,7 +87,7 @@ window.renderInvoiceTemplate = function ({ invoice, company, cashier, currency, 
   <div class="invoice-wrap">
   <div class="header">
     <div class="company">
-      ${company.logoUrl ? `<img class="logo" src="${company.logoUrl}" alt="logo">` : ''}
+      ${company.logoUrl ? `<img class="logo" src="${company.logoUrl}" alt="logo" crossorigin="anonymous">` : ''}
       <div>
         <h2>${escapeHtmlT(company.name)}</h2>
         ${company.address ? `<p>${escapeHtmlT(company.address)}</p>` : ''}

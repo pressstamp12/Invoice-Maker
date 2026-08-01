@@ -113,6 +113,18 @@ create table if not exists cash_flow (
 create index if not exists idx_cashflow_invoice on cash_flow(invoice_number);
 create index if not exists idx_cashflow_account on cash_flow(account_id);
 
+-- ---------- CUSTOMERS (data pelanggan, untuk autofill repeat order) ----------
+create table if not exists customers (
+  customer_id text primary key,
+  name        text not null,
+  phone       text default '',
+  email       text default '',
+  address     text default '',
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create unique index if not exists idx_customers_name_lower on customers (lower(name));
+
 -- ---------- GLOBAL SETTINGS (pengganti PropertiesService) ----------
 create table if not exists app_settings (
   key   text primary key,
@@ -135,11 +147,12 @@ alter table invoices       enable row level security;
 alter table purchases      enable row level security;
 alter table cash_flow      enable row level security;
 alter table app_settings   enable row level security;
+alter table customers      enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['bank_accounts','companies','cashiers','items','accounts','invoices','purchases','cash_flow','app_settings']
+  foreach t in array array['bank_accounts','companies','cashiers','items','accounts','invoices','purchases','cash_flow','app_settings','customers']
   loop
     execute format('drop policy if exists "auth_all_%1$s" on %1$s', t);
     execute format(
