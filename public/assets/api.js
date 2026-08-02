@@ -376,6 +376,21 @@
     return uploadToStorage('jpg/' + invNo + '.jpg', b64ToBlob(res.dataUrl.split(',')[1], 'image/jpeg'), 'image/jpeg');
   }
 
+  async function uploadImage(file, folder) {
+    if (!file) throw new Error('Tidak ada file dipilih.');
+    if (!file.type || file.type.indexOf('image/') !== 0) throw new Error('File harus berupa gambar (JPG/PNG/dll).');
+    const maxSize = 3 * 1024 * 1024;
+    if (file.size > maxSize) throw new Error('Ukuran gambar maksimal 3MB.');
+    const extMatch = /\.([a-zA-Z0-9]+)$/.exec(file.name || '');
+    const ext = (extMatch ? extMatch[1] : 'png').toLowerCase();
+    const safeFolder = (folder || 'uploads').replace(/[^a-zA-Z0-9_-]/g, '') || 'uploads';
+    const path = safeFolder + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+    const { error } = await sb.storage.from('invoice-files').upload(path, file, { upsert: true, contentType: file.type });
+    if (error) throw new Error(error.message);
+    const { data } = sb.storage.from('invoice-files').getPublicUrl(path);
+    return { url: data.publicUrl };
+  }
+
   /* ============ MASTER ITEM ============ */
   async function getItems() {
     const data = ok(await sb.from('items').select('*').order('created_at', { ascending: false }));
@@ -715,14 +730,19 @@
       flows = flows.filter(f => f.invoiceNumber === filter.invoiceNumber);
     }
 
+    const invoiceSortKey = (inv) => {
+      if (!inv) return -Infinity;
+      const m = String(inv).match(/(\d+)(?!.*\d)/); // ambil angka TERAKHIR dalam nomor invoice
+      return m ? parseInt(m[1], 10) : -Infinity;
+    };
     const sortBy = filter.sortBy || 'date';
     if (sortBy === 'created') {
       flows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     } else if (sortBy === 'invoice_asc' || sortBy === 'invoice_desc') {
       const dir = sortBy === 'invoice_asc' ? 1 : -1;
       flows.sort((a, b) => {
-        const ai = a.invoiceNumber || '\uffff', bi = b.invoiceNumber || '\uffff';
-        if (ai !== bi) return dir * ai.localeCompare(bi);
+        const an = invoiceSortKey(a.invoiceNumber), bn = invoiceSortKey(b.invoiceNumber);
+        if (an !== bn) return dir * (an - bn);
         return String(b.date).localeCompare(String(a.date));
       });
     } else {
@@ -783,7 +803,7 @@
     getCompanies, saveCompany, deleteCompany,
     getCashiers, saveCashier, deleteCashier,
     getSettings, saveGlobalSettings,
-    getItems, saveItem, deleteItem, getCustomers,
+    getItems, saveItem, deleteItem, getCustomers, uploadImage,
     saveInvoice, getInvoiceList, getInvoiceByNumber, deleteInvoice, updateInvoiceStatus, getInvoiceNumbers,
     getInvoicePreviewHtml, generateInvoicePdf, generateInvoiceJpg, savePdfToDrive, saveJpgToDrive,
     getPurchasesByInvoice, savePurchases, getHppModalData,

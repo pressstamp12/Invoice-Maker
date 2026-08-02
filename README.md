@@ -155,6 +155,33 @@ Fitur baru:
   dan ketik nama klien yang sama (repeat order), email/telepon/alamat
   otomatis terisi.
 
+## Update lanjutan #3: upload gambar langsung, urutan invoice angka asli, fix tanda tangan
+
+- **Upload gambar langsung dari HP** — di form Kasir (tanda tangan) dan
+  Perusahaan (logo), sekarang ada tombol **"📤 Upload"**. Klik → pilih foto
+  dari HP → otomatis terupload ke Supabase Storage dan link-nya terisi
+  sendiri. Tidak perlu lagi buka Dashboard Supabase manual. Maks ukuran
+  file 3MB per gambar.
+- **Urutan Nomor Invoice diperbaiki** — sebelumnya sortir A-Z/Z-A itu
+  alfabet biasa (bisa salah urutan kalau prefix invoice campur, mis. IMP-
+  vs INV-). Sekarang sortir memang berdasarkan **angka asli** di nomor
+  invoice (Terkecil→Terbesar / Terbesar→Terkecil).
+- **Tanda tangan masih tidak muncul** — ternyata ada sisa atribut
+  `crossorigin="anonymous"` di kode yang lupa dihapus, yang justru
+  menyebabkan gambar GAGAL DIMUAT SAMA SEKALI (bukan cuma di
+  download, preview pun kena) kalau server gambarnya tidak mendukung
+  CORS — sudah dihapus. **Kalau gambar tanda tangan/logo Anda saat ini
+  masih pakai link Google Drive**, sebaiknya diganti ke Supabase Storage
+  (pakai tombol Upload baru di atas) — Google Drive memang tidak cocok untuk
+  ini karena kadang menampilkan halaman peringatan alih-alih gambar
+  langsung, dan sering diblokir untuk akses otomatis berulang (hotlink).
+
+Cara update: timpa `public/assets/api.js`, `public/assets/app.js`,
+`public/assets/invoice-template.js`, dan `public/index.html` di repo Anda
+(JANGAN timpa `supabase-config.js`) → commit → push. Tidak perlu ubah
+database — storage bucket & policy upload sudah otomatis dibuat dari
+`schema.sql` sebelumnya.
+
 ## Update lanjutan #2: filter kas jadi dropdown, urutan A-Z/Z-A, perbaiki JPG "crash"
 
 - **Filter kas per invoice** — sekarang jadi **dropdown pilihan** (bukan

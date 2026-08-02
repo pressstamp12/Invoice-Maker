@@ -296,8 +296,8 @@
               <select id="cashSortBy" class="lf-select">
                 <option value="date">Tanggal Transaksi</option>
                 <option value="created">Tanggal Dicatat</option>
-                <option value="invoice_asc">Nomor Invoice (A-Z)</option>
-                <option value="invoice_desc">Nomor Invoice (Z-A)</option>
+                <option value="invoice_asc">Nomor Invoice (Terkecil → Terbesar)</option>
+                <option value="invoice_desc">Nomor Invoice (Terbesar → Terkecil)</option>
               </select>
             </div>
           </div>
@@ -357,7 +357,15 @@
                 <p class="hint" style="margin:4px 0 0">Rekening ini yang tampil di PDF invoice. Kelola daftarnya di bagian "Database Rekening" di bawah.</p>
               </div>
               <div class="field full"><label>Info Rekening Manual (fallback, opsional)</label><input type="text" id="companyBank" placeholder="BCA 1234567890 a.n. ..."></div>
-              <div class="field full"><label>URL Logo (opsional)</label><input type="text" id="companyLogo" placeholder="https://.../logo.png"></div>
+              <div class="field full">
+                <label>URL Logo (opsional)</label>
+                <div style="display:flex;gap:8px">
+                  <input type="text" id="companyLogo" placeholder="https://.../logo.png" style="flex:1">
+                  <button type="button" id="companyLogoUploadBtn" class="btn-secondary" style="white-space:nowrap">📤 Upload</button>
+                </div>
+                <input type="file" id="companyLogoFile" accept="image/*" class="hidden">
+                <p class="hint" style="margin:4px 0 0">Atau pilih gambar dari HP lewat tombol Upload — otomatis tersimpan & terisi linknya.</p>
+              </div>
             </div>
             <div class="actions">
               <button type="submit" class="btn-primary">💾 Simpan Perusahaan</button>
@@ -374,7 +382,14 @@
             <div class="grid-2">
               <div class="field"><label>Nama Kasir *</label><input type="text" id="cashierName" required></div>
               <div class="field"><label>Telepon</label><input type="text" id="cashierPhone"></div>
-              <div class="field full"><label>URL Gambar Tanda Tangan (opsional)</label><input type="text" id="cashierSignature" placeholder="https://.../ttd.png"></div>
+              <div class="field full">
+                <label>URL Gambar Tanda Tangan (opsional)</label>
+                <div style="display:flex;gap:8px">
+                  <input type="text" id="cashierSignature" placeholder="https://.../ttd.png" style="flex:1">
+                  <button type="button" id="cashierSigUploadBtn" class="btn-secondary" style="white-space:nowrap">📤 Upload</button>
+                </div>
+                <input type="file" id="cashierSigFile" accept="image/*" class="hidden">
+              </div>
             </div>
             <p class="hint">Kosongkan jika ingin pakai nama + garis tanda tangan otomatis. Isi URL gambar TTD (mis. dari hosting/Supabase Storage) jika ingin tampil gambar.</p>
             <img id="cashierSigPreview" class="sig-preview hidden" alt="preview ttd">

@@ -126,6 +126,9 @@ function initApp() {
 
   $('logoutBtn').addEventListener('click', doLogout);
 
+  wireImageUpload('cashierSigUploadBtn', 'cashierSigFile', 'cashierSignature', 'signatures', updateSigPreview);
+  wireImageUpload('companyLogoUploadBtn', 'companyLogoFile', 'companyLogo', 'logos');
+
   loadGoogleCharts();
 }
 
@@ -770,6 +773,24 @@ function onClientNameChange() {
     if (!val('clientAddress').trim()) setVal('clientAddress', match.address || '');
     toast('Data klien "' + match.name + '" otomatis terisi');
   }
+}
+
+/* ---------------- UPLOAD GAMBAR (tanda tangan / logo) ---------------- */
+function wireImageUpload(btnId, fileId, textInputId, folder, onDoneExtra) {
+  const btn = $(btnId), fileInput = $(fileId);
+  if (!btn || !fileInput || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  btn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    run('uploadImage', [file, folder], res => {
+      setVal(textInputId, res.url);
+      toast('Gambar berhasil diupload');
+      if (onDoneExtra) onDoneExtra();
+      fileInput.value = '';
+    }, { onErr: err => { toast('Gagal upload: ' + err.message, true); fileInput.value = ''; } });
+  });
 }
 
 /* ---------------- ITEM MASTER ---------------- */
