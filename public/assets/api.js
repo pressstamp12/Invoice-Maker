@@ -267,23 +267,27 @@
   }
 
   /* ============ PREVIEW / PDF / JPG (pengganti HtmlService + Drive) ============ */
-  async function toDataUri(url) {
+  async function toDataUri(url, timeoutMs) {
     if (!url) return url;
     try {
-      const res = await fetch(url);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs || 5000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
       if (!res.ok) return url;
       const blob = await res.blob();
-      return await new Promise((resolve, reject) => {
+      return await new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
+        reader.onerror = () => resolve(url); // gagal baca -> fallback ke URL asli, jangan sampai macet
         reader.readAsDataURL(blob);
       });
     } catch (e) {
-      return url; // fallback: kalau gagal (server tidak izinkan CORS sama sekali), tetap pakai URL asli
+      return url; // timeout / CORS diblokir total -> fallback ke URL asli
     }
   }
 
+  // Versi RINGAN untuk preview di layar — pakai URL gambar apa adanya, cepat & tidak pernah macet.
   async function buildInvoiceHtml(invNo) {
     const invoice = await getInvoiceByNumber(invNo);
     const company = await getCompanyById(invoice.companyId);
@@ -291,20 +295,28 @@
     const cashier = invoice.cashierId ? await getCashierById(invoice.cashierId) : null;
     const currency = company.currency || 'Rp';
     const bankLine = defBank ? formatBankLine(defBank) : (company.bank || '');
+    return window.renderInvoiceTemplate({ invoice, company, cashier, currency, bankLine });
+  }
+  async function getInvoicePreviewHtml(invNo) { return buildInvoiceHtml(invNo); }
 
-    // Ubah logo & tanda tangan jadi data URI dulu -> supaya render ke JPG/PDF selalu
-    // konsisten dengan yang tampil di preview, tidak tergantung izin CORS server gambar
-    // saat proses capture (html2canvas) berlangsung.
+  // Versi KHUSUS untuk export (PDF/JPG) — logo & ttd diubah jadi data URI dulu
+  // (dengan timeout, supaya tidak macet kalau server gambar lambat/CORS diblokir).
+  async function buildInvoiceHtmlForCapture(invNo) {
+    const invoice = await getInvoiceByNumber(invNo);
+    const company = await getCompanyById(invoice.companyId);
+    const defBank = company.defaultBankId ? await getBankById(company.defaultBankId) : null;
+    const cashier = invoice.cashierId ? await getCashierById(invoice.cashierId) : null;
+    const currency = company.currency || 'Rp';
+    const bankLine = defBank ? formatBankLine(defBank) : (company.bank || '');
+
     const [logoData, sigData] = await Promise.all([
       toDataUri(company.logoUrl),
       cashier ? toDataUri(cashier.signatureUrl) : Promise.resolve(null)
     ]);
     const companyForRender = Object.assign({}, company, { logoUrl: logoData });
     const cashierForRender = cashier ? Object.assign({}, cashier, { signatureUrl: sigData }) : null;
-
     return window.renderInvoiceTemplate({ invoice, company: companyForRender, cashier: cashierForRender, currency, bankLine });
   }
-  async function getInvoicePreviewHtml(invNo) { return buildInvoiceHtml(invNo); }
 
   async function waitImagesLoaded(doc, timeoutMs) {
     const imgs = Array.from((doc && doc.images) || []);
@@ -317,10 +329,9 @@
       new Promise(res => setTimeout(res, timeoutMs || 3000))
     ]);
   }
-  window.waitImagesLoaded = waitImagesLoaded;
 
-  async function generateInvoicePdf(invNo) {
-    const html = await buildInvoiceHtml(invNo);
+  async function renderInvoiceToCanvas(invNo) {
+    const html = await buildInvoiceHtmlForCapture(invNo);
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:780px;border:0;';
     document.body.appendChild(iframe);
@@ -328,11 +339,20 @@
     await waitImagesLoaded(iframe.contentDocument, 3000);
     const canvas = await html2canvas(iframe.contentDocument.body, { scale: 2, backgroundColor: '#fff', useCORS: true, allowTaint: true });
     document.body.removeChild(iframe);
+    return canvas;
+  }
+
+  async function generateInvoicePdf(invNo) {
+    const canvas = await renderInvoiceToCanvas(invNo);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ unit: 'px', format: [canvas.width / 2, canvas.height / 2] });
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width / 2, canvas.height / 2);
     const base64 = pdf.output('datauristring').split(',')[1];
     return { filename: invNo + '.pdf', base64 };
+  }
+  async function generateInvoiceJpg(invNo) {
+    const canvas = await renderInvoiceToCanvas(invNo);
+    return { filename: invNo + '.jpg', dataUrl: canvas.toDataURL('image/jpeg', 0.92) };
   }
 
   async function uploadToStorage(path, blob, contentType) {
@@ -351,10 +371,9 @@
     const res = await generateInvoicePdf(invNo);
     return uploadToStorage('pdf/' + invNo + '.pdf', b64ToBlob(res.base64, 'application/pdf'), 'application/pdf');
   }
-  async function saveJpgToDrive(invNo, base64Data) {
-    if (!base64Data) throw new Error('Data gambar kosong.');
-    const clean = base64Data.indexOf(',') !== -1 ? base64Data.split(',')[1] : base64Data;
-    return uploadToStorage('jpg/' + invNo + '.jpg', b64ToBlob(clean, 'image/jpeg'), 'image/jpeg');
+  async function saveJpgToDrive(invNo) {
+    const res = await generateInvoiceJpg(invNo);
+    return uploadToStorage('jpg/' + invNo + '.jpg', b64ToBlob(res.dataUrl.split(',')[1], 'image/jpeg'), 'image/jpeg');
   }
 
   /* ============ MASTER ITEM ============ */
@@ -508,6 +527,11 @@
   async function getImportPreviewInfo() {
     const [companies, cashiers] = await Promise.all([getCompanies(), getCashiers()]);
     return { companies: companies.map(c => ({ companyId: c.companyId, name: c.name })), existingCashiers: cashiers.map(c => c.name) };
+  }
+
+  async function getInvoiceNumbers() {
+    const data = ok(await sb.from('invoices').select('invoice_number, client_name').order('invoice_number', { ascending: false }));
+    return data.map(r => ({ invoiceNumber: r.invoice_number, clientName: r.client_name }));
   }
 
   /* ============ DASHBOARD ============ */
@@ -688,17 +712,17 @@
     if (filter.type) flows = flows.filter(f => f.type === filter.type);
     if (filter.month) flows = flows.filter(f => String(f.date).slice(0, 7) === filter.month);
     if (filter.invoiceNumber) {
-      const q = filter.invoiceNumber.toLowerCase();
-      flows = flows.filter(f => (f.invoiceNumber || '').toLowerCase().indexOf(q) !== -1);
+      flows = flows.filter(f => f.invoiceNumber === filter.invoiceNumber);
     }
 
     const sortBy = filter.sortBy || 'date';
     if (sortBy === 'created') {
       flows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    } else if (sortBy === 'invoice') {
+    } else if (sortBy === 'invoice_asc' || sortBy === 'invoice_desc') {
+      const dir = sortBy === 'invoice_asc' ? 1 : -1;
       flows.sort((a, b) => {
         const ai = a.invoiceNumber || '\uffff', bi = b.invoiceNumber || '\uffff';
-        if (ai !== bi) return ai.localeCompare(bi);
+        if (ai !== bi) return dir * ai.localeCompare(bi);
         return String(b.date).localeCompare(String(a.date));
       });
     } else {
@@ -760,8 +784,8 @@
     getCashiers, saveCashier, deleteCashier,
     getSettings, saveGlobalSettings,
     getItems, saveItem, deleteItem, getCustomers,
-    saveInvoice, getInvoiceList, getInvoiceByNumber, deleteInvoice, updateInvoiceStatus,
-    getInvoicePreviewHtml, generateInvoicePdf, savePdfToDrive, saveJpgToDrive,
+    saveInvoice, getInvoiceList, getInvoiceByNumber, deleteInvoice, updateInvoiceStatus, getInvoiceNumbers,
+    getInvoicePreviewHtml, generateInvoicePdf, generateInvoiceJpg, savePdfToDrive, saveJpgToDrive,
     getPurchasesByInvoice, savePurchases, getHppModalData,
     importExcelRows, getImportPreviewInfo,
     getDashboardData,

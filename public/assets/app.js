@@ -21,6 +21,7 @@ let bankAccountsCache = [];
 let listFilterCompany = 'all';
 let customersCache = [];
 let cashSortBy = 'date';
+let cashInvoiceOptionsLoaded = false;
 
 /* ---------------- HELPERS ---------------- */
 const $ = id => document.getElementById(id);
@@ -429,6 +430,7 @@ function onSubmitInvoice(e) {
   run('saveInvoice', [data], res => {
     toast('Invoice ' + res.invoiceNumber + ' tersimpan'); resetForm();
     loadCustomersCache();
+    cashInvoiceOptionsLoaded = false;
     document.querySelector('.tab-btn[data-tab="list"]').click();
   }, { lockKey: 'saveInvoice:' + (data.invoiceNumber || 'new') });
 }
@@ -721,25 +723,11 @@ function triggerDownload(href, name) {
   a.href = href; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
 }
-function renderPreviewToCanvas() {
-  return new Promise((resolve, reject) => {
-    const iframe = $('previewIframe');
-    if (!iframe || !iframe.contentDocument) { reject(new Error('Preview belum siap')); return; }
-    const doc = iframe.contentDocument;
-    const wait = window.waitImagesLoaded ? window.waitImagesLoaded(doc, 3000) : Promise.resolve();
-    Promise.resolve(wait).then(() => {
-      html2canvas(doc.body, { scale: 2, backgroundColor: '#ffffff', useCORS: true, allowTaint: true })
-        .then(resolve).catch(reject);
-    });
-  });
-}
 function downloadJpgFromPreview() {
-  showLoading(true);
-  renderPreviewToCanvas().then(canvas => {
-    showLoading(false);
-    triggerDownload(canvas.toDataURL('image/jpeg', 0.92), currentPreviewInv + '.jpg');
+  run('generateInvoiceJpg', [currentPreviewInv], res => {
+    triggerDownload(res.dataUrl, res.filename);
     toast('JPG diunduh');
-  }).catch(err => { showLoading(false); toast('Gagal render JPG: ' + err.message, true); });
+  }, { onErr: err => toast('Gagal membuat JPG: ' + err.message, true) });
 }
 function showShareLink(url, msg) {
   setVal('shareLinkInput', url);
@@ -749,11 +737,8 @@ function showShareLink(url, msg) {
   toast(msg);
 }
 function shareJpgDriveFromPreview() {
-  showLoading(true);
-  renderPreviewToCanvas().then(canvas => {
-    run('saveJpgToDrive', [currentPreviewInv, canvas.toDataURL('image/jpeg', 0.92)],
-      res => showShareLink(res.url, 'Link JPG siap dibagikan'));
-  }).catch(err => { showLoading(false); toast('Gagal render JPG: ' + err.message, true); });
+  run('saveJpgToDrive', [currentPreviewInv], res => showShareLink(res.url, 'Link JPG siap dibagikan'),
+    { onErr: err => toast('Gagal membuat JPG: ' + err.message, true) });
 }
 function shareDriveFromPreview() {
   run('savePdfToDrive', [currentPreviewInv], res => showShareLink(res.url, 'Link PDF siap dibagikan'));
@@ -1036,10 +1021,11 @@ window.addEventListener('resize', () => {
 /* ---------------- TAB KAS ---------------- */
 function loadCashTab() {
   bindCashFilterHandlers();
+  loadCashInvoiceOptions();
   const filter = { sortBy: cashSortBy };
   if (cashFilterType !== 'all') filter.type = cashFilterType;
   if (cashFilterAccount !== 'all') filter.accountId = cashFilterAccount;
-  if (cashFilterInvoice.trim()) filter.invoiceNumber = cashFilterInvoice.trim();
+  if (cashFilterInvoice) filter.invoiceNumber = cashFilterInvoice;
   $('accountBalanceWrap').innerHTML = '<p class="muted">Memuat...</p>';
   $('cashFlowWrap').innerHTML = '<p class="muted">Memuat...</p>';
   run('getCashData', [filter], d => {
@@ -1057,11 +1043,11 @@ function loadCashTab() {
 function renderCashInvoiceSummary(d) {
   const box = $('cashInvoiceSummary');
   if (!box) return;
-  if (!cashFilterInvoice.trim()) { box.innerHTML = ''; return; }
+  if (!cashFilterInvoice) { box.innerHTML = ''; return; }
   const selisih = (d.filteredIn || 0) - (d.filteredOut || 0);
   const jumlah = (d.flows || []).length;
   box.innerHTML = `<div class="import-summary" style="background:#dbeafe">
-    Invoice cocok "<strong>${escapeHtml(cashFilterInvoice.trim())}</strong>": <strong>${jumlah}</strong> transaksi kas ditemukan.
+    Invoice <strong>${escapeHtml(cashFilterInvoice)}</strong>: <strong>${jumlah}</strong> transaksi kas ditemukan.
     Uang Masuk: <strong class="profit-positive">${formatMoney(d.filteredIn)}</strong> ·
     Uang Keluar: <strong class="profit-negative">${formatMoney(d.filteredOut)}</strong> ·
     Selisih: <strong class="${selisih >= 0 ? 'profit-positive' : 'profit-negative'}">${formatMoney(selisih)}</strong>
@@ -1146,11 +1132,7 @@ function bindCashFilterHandlers() {
   const fi = $('cashFilterInvoice');
   if (fi && !fi.dataset.bound) {
     fi.dataset.bound = '1';
-    let t;
-    fi.addEventListener('input', () => {
-      clearTimeout(t);
-      t = setTimeout(() => { cashFilterInvoice = fi.value; loadCashTab(); }, 350);
-    });
+    fi.addEventListener('change', () => { cashFilterInvoice = fi.value; loadCashTab(); });
   }
   const form = $('accountForm');
   if (form && !form.dataset.bound) {
@@ -1158,6 +1140,19 @@ function bindCashFilterHandlers() {
     form.addEventListener('submit', onSubmitAccountForm);
     $('cancelAccountEditBtn').addEventListener('click', resetAccountForm);
   }
+}
+
+function loadCashInvoiceOptions() {
+  if (cashInvoiceOptionsLoaded) return;
+  cashInvoiceOptionsLoaded = true;
+  run('getInvoiceNumbers', [], list => {
+    const sel = $('cashFilterInvoice');
+    if (!sel) return;
+    const cur = cashFilterInvoice;
+    sel.innerHTML = '<option value="">Semua Invoice</option>' +
+      (list || []).map(i => `<option value="${escapeHtml(i.invoiceNumber)}">${escapeHtml(i.invoiceNumber)} — ${escapeHtml(i.clientName || '')}</option>`).join('');
+    sel.value = cur;
+  }, { loading: false });
 }
 
 /* ---- Akun kas: CRUD ---- */

@@ -155,6 +155,28 @@ Fitur baru:
   dan ketik nama klien yang sama (repeat order), email/telepon/alamat
   otomatis terisi.
 
+## Update lanjutan #2: filter kas jadi dropdown, urutan A-Z/Z-A, perbaiki JPG "crash"
+
+- **Filter kas per invoice** — sekarang jadi **dropdown pilihan** (bukan
+  ketik bebas lagi), isinya otomatis semua nomor invoice yang ada + nama
+  klien, jadi tidak mungkin salah ketik.
+- **Urutan Nomor Invoice A-Z / Z-A** — di dropdown "Urutkan" tab Kas.
+- **Tanda tangan JPG/PDF "crash"** — penyebabnya: percobaan perbaikan
+  sebelumnya membuat *preview* ikut menunggu proses `fetch()` gambar dari
+  server (bisa macet lama/gagal kalau server gambar lambat atau tidak
+  mengizinkan CORS sama sekali), sehingga preview jadi terasa "nge-hang"/gagal.
+  Sekarang dipisah jadi dua jalur:
+  - **Preview di layar** → kembali ke cara cepat/ringan seperti semula
+    (pakai URL gambar apa adanya, tidak pernah macet).
+  - **Download/Share PDF & JPG** → pakai jalur khusus dengan **timeout 5 detik**:
+    kalau gambar berhasil diambil, dipakai; kalau gagal/lambat, otomatis
+    lanjut tanpa macet (gambar itu saja yang mungkin tidak muncul, bukan
+    seluruh prosesnya gagal).
+
+Cara update: timpa `public/assets/api.js`, `public/assets/app.js`, dan
+`public/index.html` di repo Anda (JANGAN timpa `supabase-config.js`) →
+commit → push.
+
 ## Update lanjutan: tanda tangan JPG, filter kas per invoice, grafik mobile
 
 - **Tanda tangan/logo hilang di JPG/PDF** — sekarang sebelum di-capture, gambar
