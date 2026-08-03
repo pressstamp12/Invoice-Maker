@@ -129,6 +129,7 @@ function initApp() {
   wireImageUpload('cashierSigUploadBtn', 'cashierSigFile', 'cashierSignature', 'signatures', updateSigPreview);
   wireImageUpload('companyLogoUploadBtn', 'companyLogoFile', 'companyLogo', 'logos');
   initSimUI();
+  initCatalogUI();
 
   loadGoogleCharts();
 }
@@ -159,7 +160,6 @@ function loadGoogleCharts() {
 /* ---------------- TABS ---------------- */
 function initTabs() {
   const map = { list: loadInvoiceList, items: loadItemsList, create: () => { loadItemsCache(); loadCustomersCache(); },
-    simulasi: () => { loadItemsCache(); if (!$('simBody').children.length) addSimRow(); },
     dashboard: loadDashboard, cash: loadCashTab,
     settings: () => { loadCompanyList(); loadCashierList(); initImportUI(); } };
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -812,19 +812,19 @@ function onClientNameChange() {
 
 /* ---------------- SIMULASI HARGA (kalkulator lokal, tidak tersimpan ke DB) ---------------- */
 let simCounter = 0;
-function addSimRow() {
+function addSimRow(prefill) {
   simCounter++;
   const tr = document.createElement('tr');
   tr.dataset.id = simCounter;
   tr.innerHTML = `
-    <td><input type="text" class="sim-desc" list="itemsDatalist" placeholder="mis. Banner Flexi Korea"></td>
+    <td><input type="text" class="sim-desc" list="itemsDatalist" placeholder="mis. Banner Flexi Korea" value="${prefill ? escapeHtml(prefill.desc) : ''}"></td>
     <td><select class="sim-mode">
       <option value="area">Per m²</option>
-      <option value="unit">Per Satuan</option>
+      <option value="unit"${prefill ? ' selected' : ''}>Per Satuan</option>
     </select></td>
     <td><input type="number" class="sim-p" min="0" step="any" placeholder="cm"></td>
     <td><input type="number" class="sim-l" min="0" step="any" placeholder="cm"></td>
-    <td><input type="number" class="sim-price" min="0" step="any" placeholder="0"></td>
+    <td><input type="number" class="sim-price" min="0" step="any" placeholder="0" value="${prefill ? prefill.price : ''}"></td>
     <td><input type="number" class="sim-qty" min="0" step="any" value="1"></td>
     <td class="sim-subtotal">${formatMoney(0)}</td>
     <td><button type="button" class="remove-item-btn" title="Hapus baris">&times;</button></td>`;
@@ -920,6 +920,7 @@ function fallbackCopyText(text) {
 function simToInvoice() {
   const rows = getSimRowsData();
   if (!rows.length) { toast('Belum ada baris simulasi yang valid', true); return; }
+  closeSimModal();
   document.querySelector('.tab-btn[data-tab="create"]').click();
   $('itemsBody').innerHTML = ''; itemCounter = 0;
   rows.forEach(r => {
@@ -932,6 +933,12 @@ function simToInvoice() {
   toast('Item dari simulasi sudah dipindah ke form invoice');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+function openSimModal(prefillItem) {
+  $('simModalOverlay').classList.remove('hidden');
+  if (prefillItem) addSimRow(prefillItem);
+  else if (!$('simBody').children.length) addSimRow();
+}
+function closeSimModal() { $('simModalOverlay').classList.add('hidden'); }
 function initSimUI() {
   const addBtn = $('simAddRowBtn');
   if (!addBtn || addBtn.dataset.bound) return;
@@ -939,6 +946,7 @@ function initSimUI() {
   addBtn.addEventListener('click', () => addSimRow());
   $('simCopyBtn').addEventListener('click', simCopyResult);
   $('simToInvoiceBtn').addEventListener('click', simToInvoice);
+  $('simModalCloseBtn').addEventListener('click', closeSimModal);
   $('simClearBtn').addEventListener('click', () => {
     if (!confirm('Kosongkan semua baris simulasi?')) return;
     $('simBody').innerHTML = ''; simCounter = 0; addSimRow();
@@ -971,42 +979,89 @@ function loadItemsCache() {
   }, { loading: false });
 }
 function loadItemsList() {
-  loadItemsCache();
-  const wrap = $('itemListWrap');
+  const wrap = $('itemCatalogWrap');
   wrap.innerHTML = '<p class="muted">Memuat...</p>';
   run('getItems', [], items => {
-    if (!items.length) { wrap.innerHTML = '<p class="muted">Belum ada item.</p>'; return; }
-    wrap.innerHTML = items.map(it => miniCard(
-      `<strong>${escapeHtml(it.itemName)}</strong> · ${formatMoney(it.defaultPrice)}`,
-      `${escapeHtml(it.category || '-')} · ${escapeHtml(it.unit || '-')}`,
-      `editItem('${it.itemId}')`, `deleteItemUi('${it.itemId}')`)).join('');
+    itemsCache = items || [];
+    $('itemsDatalist').innerHTML = itemsCache.map(it => `<option value="${escapeHtml(it.itemName)}">`).join('');
+    renderItemCatalog();
   }, { loading: false });
+}
+function itemIcon(category) {
+  const c = (category || '').toLowerCase();
+  if (c.indexOf('jasa') !== -1) return '🛠️';
+  if (c.indexOf('banner') !== -1 || c.indexOf('spanduk') !== -1 || c.indexOf('flexi') !== -1) return '🖼️';
+  if (c.indexOf('stiker') !== -1 || c.indexOf('sticker') !== -1) return '🏷️';
+  if (c.indexOf('kertas') !== -1 || c.indexOf('cartoon') !== -1 || c.indexOf('cetak') !== -1) return '📄';
+  if (c.indexOf('produk') !== -1) return '📦';
+  return '🧾';
+}
+function renderItemCatalog() {
+  const wrap = $('itemCatalogWrap'); if (!wrap) return;
+  const q = (($('itemSearchInput') || {}).value || '').toLowerCase().trim();
+  const list = q ? itemsCache.filter(it => it.itemName.toLowerCase().indexOf(q) !== -1 || (it.category || '').toLowerCase().indexOf(q) !== -1) : itemsCache;
+  if (!list.length) {
+    wrap.innerHTML = '<p class="muted">' + (q ? 'Tidak ada item cocok.' : 'Belum ada item. Tambahkan lewat tombol "+ Tambah Item".') + '</p>';
+    return;
+  }
+  wrap.innerHTML = list.map(it => `
+    <div class="item-card" onclick="onItemCardTap('${it.itemId}')">
+      <div class="ic-actions" onclick="event.stopPropagation()">
+        <button onclick="editItem('${it.itemId}')" title="Edit">✏️</button>
+        <button class="del-btn" onclick="deleteItemUi('${it.itemId}')" title="Hapus">🗑️</button>
+      </div>
+      <div class="ic-icon">${itemIcon(it.category)}</div>
+      <div class="ic-name">${escapeHtml(it.itemName)}</div>
+      <div class="ic-cat">${escapeHtml(it.category || '-')}</div>
+      <div class="ic-price">${formatMoney(it.defaultPrice)}</div>
+      <div class="ic-unit">/ ${escapeHtml(it.unit || 'satuan')}</div>
+    </div>`).join('');
+}
+function onItemCardTap(id) {
+  const it = itemsCache.find(x => x.itemId === id); if (!it) return;
+  openSimModal({ desc: it.itemName, price: it.defaultPrice });
 }
 function onSubmitItemForm(e) {
   e.preventDefault();
   const data = { itemId: val('editItemId'), itemName: val('itemName'), category: val('itemCategory'),
     defaultPrice: parseFloat(val('itemPrice')) || 0, unit: val('itemUnit') };
   if (!data.itemName.trim()) { toast('Nama item wajib diisi', true); return; }
-  run('saveItem', [data], () => { toast('Item disimpan'); resetItemForm(); loadItemsList(); });
+  run('saveItem', [data], () => { toast('Item disimpan'); closeItemFormCard(); loadItemsList(); });
 }
-function resetItemForm() {
+function closeItemFormCard() {
+  $('itemFormCard').classList.add('hidden');
   $('itemForm').reset(); setVal('editItemId', '');
   setTxt('itemFormTitle', 'Tambah Item Baru');
-  show('cancelItemEditBtn', false);
 }
-function cancelItemEdit() { resetItemForm(); }
+function resetItemForm() { closeItemFormCard(); }
+function cancelItemEdit() { closeItemFormCard(); }
 function editItem(id) {
   const it = itemsCache.find(x => x.itemId === id); if (!it) return;
+  $('itemFormCard').classList.remove('hidden');
   setVal('editItemId', it.itemId); setVal('itemName', it.itemName);
   setVal('itemCategory', it.category || ''); setVal('itemPrice', it.defaultPrice || 0);
   setVal('itemUnit', it.unit || '');
   setTxt('itemFormTitle', 'Edit Item');
-  show('cancelItemEditBtn', true);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function deleteItemUi(id) {
   if (!confirm('Hapus item ini?')) return;
   run('deleteItem', [id], () => { toast('Item dihapus'); loadItemsList(); });
+}
+function initCatalogUI() {
+  const addBtn = $('itemAddToggleBtn');
+  if (addBtn && !addBtn.dataset.bound) {
+    addBtn.dataset.bound = '1';
+    addBtn.addEventListener('click', () => {
+      const card = $('itemFormCard');
+      if (card.classList.contains('hidden')) { card.classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); $('itemName').focus(); }
+      else closeItemFormCard();
+    });
+  }
+  const openBtn = $('openSimBtn');
+  if (openBtn && !openBtn.dataset.bound) { openBtn.dataset.bound = '1'; openBtn.addEventListener('click', () => openSimModal()); }
+  const search = $('itemSearchInput');
+  if (search && !search.dataset.bound) { search.dataset.bound = '1'; search.addEventListener('input', renderItemCatalog); }
 }
 
 /* ---------------- DASHBOARD ---------------- */

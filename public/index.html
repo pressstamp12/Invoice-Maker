@@ -52,8 +52,7 @@
         <button class="tab-btn" data-tab="create">Buat Invoice</button>
         <button class="tab-btn" data-tab="list">Daftar Invoice</button>
         <button class="tab-btn" data-tab="cash">Kas</button>
-        <button class="tab-btn" data-tab="items">Kelola Item</button>
-        <button class="tab-btn" data-tab="simulasi">Simulasi Harga</button>
+        <button class="tab-btn" data-tab="items">Katalog</button>
         <button class="tab-btn" data-tab="settings">Pengaturan</button>
       </nav>
     </header>
@@ -314,9 +313,21 @@
         </div>
       </section>
 
-      <!-- TAB: KELOLA ITEM -->
+      <!-- TAB: KATALOG ITEM -->
       <section id="tab-items" class="tab-content">
         <div class="card">
+          <div class="catalog-header">
+            <h2 style="margin:0">📦 Katalog Item</h2>
+            <div class="catalog-header-actions">
+              <button type="button" id="openSimBtn" class="btn-primary">🧮 Simulasi</button>
+              <button type="button" id="itemAddToggleBtn" class="btn-secondary">+ Tambah Item</button>
+            </div>
+          </div>
+          <p class="hint" style="margin-top:10px">Ketuk salah satu item untuk langsung simulasi harganya. Ketuk ✏️ untuk edit, 🗑️ untuk hapus.</p>
+          <input type="text" id="itemSearchInput" placeholder="🔍 Cari item / kategori..." style="margin-top:6px">
+        </div>
+
+        <div class="card hidden" id="itemFormCard">
           <h2 id="itemFormTitle">Tambah Item Baru</h2>
           <form id="itemForm">
             <input type="hidden" id="editItemId" value="">
@@ -328,54 +339,12 @@
             </div>
             <div class="actions">
               <button type="submit" class="btn-primary">💾 Simpan Item</button>
-              <button type="button" id="cancelItemEditBtn" class="btn-secondary hidden">Batal Edit</button>
+              <button type="button" id="cancelItemEditBtn" class="btn-secondary">Batal</button>
             </div>
           </form>
         </div>
-        <div class="card">
-          <h2>Database Item</h2>
-          <div id="itemListWrap" class="mini-cards"><p class="muted">Memuat...</p></div>
-        </div>
-      </section>
 
-      <!-- TAB: SIMULASI HARGA -->
-      <section id="tab-simulasi" class="tab-content">
-        <div class="card">
-          <h2>🧮 Simulasi Perhitungan Harga</h2>
-          <p class="hint">Kalkulator cepat untuk jawab pertanyaan customer (mis. "berapa harga cetak banner ukuran 2x1 meter?"). Hitung dulu di sini, tidak tersimpan ke database — kalau sudah pas, bisa langsung dipakai jadi invoice.</p>
-          <table class="items-table" id="simTable">
-            <thead>
-              <tr>
-                <th>Deskripsi Bahan</th>
-                <th style="width:90px">Mode</th>
-                <th style="width:65px">P (cm)</th>
-                <th style="width:65px">L (cm)</th>
-                <th style="width:100px">Harga</th>
-                <th style="width:55px">Qty</th>
-                <th style="width:110px">Subtotal</th>
-                <th style="width:36px"></th>
-              </tr>
-            </thead>
-            <tbody id="simBody"></tbody>
-          </table>
-          <button type="button" id="simAddRowBtn" class="btn-secondary">+ Tambah Baris</button>
-
-          <div class="summary-box" style="margin-top:14px">
-            <div class="total-row"><span>Total Simulasi</span><strong id="simGrandTotal">Rp 0</strong></div>
-          </div>
-
-          <div class="actions">
-            <button type="button" id="simCopyBtn" class="btn-secondary">📋 Salin Hasil</button>
-            <button type="button" id="simToInvoiceBtn" class="btn-primary">🧾 Pakai di Buat Invoice</button>
-            <button type="button" id="simClearBtn" class="btn-secondary">🗑️ Kosongkan</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <h2>Cara Pakai</h2>
-          <p class="hint" style="margin-bottom:6px"><strong>Mode "Per m²"</strong> — untuk bahan yang dijual per meter persegi (banner, flexi, sticker, dll). Isi Panjang & Lebar dalam cm, lalu Harga per m². Sistem otomatis hitung luasnya.</p>
-          <p class="hint" style="margin:0"><strong>Mode "Per Satuan"</strong> — untuk bahan yang dijual per lembar/pcs/paket (kolom P & L diabaikan). Isi Harga per satuan langsung.</p>
-        </div>
+        <div id="itemCatalogWrap" class="catalog-grid"><p class="muted">Memuat...</p></div>
       </section>
 
       <!-- TAB: PENGATURAN -->
@@ -596,6 +565,47 @@
       <div class="actions">
         <button type="button" class="btn-primary" onclick="savePayModal()">💾 Simpan Penerimaan</button>
         <button type="button" class="btn-secondary" onclick="closePayModal()">Batal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SIMULASI HARGA -->
+  <div id="simModalOverlay" class="modal-overlay hidden">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2>🧮 Simulasi Harga</h2>
+        <button type="button" id="simModalCloseBtn" class="modal-close">&times;</button>
+      </div>
+      <p class="hint">Kalkulator cepat, tidak tersimpan ke database. Kalau sudah pas, langsung dipakai jadi invoice.</p>
+      <div class="table-scroll">
+      <table class="items-table" id="simTable">
+        <thead>
+          <tr>
+            <th>Deskripsi Bahan</th>
+            <th style="width:88px">Mode</th>
+            <th style="width:60px">P (cm)</th>
+            <th style="width:60px">L (cm)</th>
+            <th style="width:95px">Harga</th>
+            <th style="width:50px">Qty</th>
+            <th style="width:105px">Subtotal</th>
+            <th style="width:32px"></th>
+          </tr>
+        </thead>
+        <tbody id="simBody"></tbody>
+      </table>
+      </div>
+      <button type="button" id="simAddRowBtn" class="btn-secondary">+ Tambah Baris</button>
+
+      <p class="hint" style="margin-top:12px"><strong>Per m²</strong>: isi Panjang & Lebar (cm) + harga per m², luas dihitung otomatis. <strong>Per Satuan</strong>: isi harga langsung, P/L diabaikan.</p>
+
+      <div class="summary-box" style="margin-top:6px">
+        <div class="total-row"><span>Total Simulasi</span><strong id="simGrandTotal">Rp 0</strong></div>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="simCopyBtn" class="btn-secondary">📋 Salin Hasil</button>
+        <button type="button" id="simToInvoiceBtn" class="btn-primary">🧾 Pakai di Buat Invoice</button>
+        <button type="button" id="simClearBtn" class="btn-secondary">🗑️ Kosongkan</button>
       </div>
     </div>
   </div>

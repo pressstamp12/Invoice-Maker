@@ -222,6 +222,23 @@ input:focus, textarea:focus, select:focus { outline:none; border-color:var(--pri
   .prod-table td, .prod-table th { font-size:12px; padding:8px 4px; }
 }
 
+/* ---------- KATALOG ITEM ---------- */
+.catalog-header { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+.catalog-header-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.catalog-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+@media (min-width:640px) { .catalog-grid { grid-template-columns:repeat(3,1fr); } }
+@media (min-width:900px) { .catalog-grid { grid-template-columns:repeat(4,1fr); } }
+.item-card { background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius); padding:12px; position:relative; cursor:pointer; transition:box-shadow .15s,border-color .15s; box-shadow:0 1px 3px rgba(15,23,42,.05); }
+.item-card:hover, .item-card:active { box-shadow:0 4px 12px rgba(15,23,42,.12); border-color:var(--accent); }
+.item-card .ic-icon { font-size:26px; margin-bottom:6px; }
+.item-card .ic-name { font-weight:700; font-size:13px; margin-bottom:3px; line-height:1.3; padding-right:52px; }
+.item-card .ic-cat { font-size:11px; color:var(--muted); margin-bottom:8px; }
+.item-card .ic-price { font-size:14px; font-weight:700; color:var(--primary); }
+.item-card .ic-unit { font-size:11px; color:var(--muted); }
+.item-card .ic-actions { position:absolute; top:8px; right:8px; display:flex; gap:4px; }
+.item-card .ic-actions button { width:26px; height:26px; border-radius:50%; border:1px solid var(--border); background:#fff; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+.item-card .ic-actions .del-btn { color:var(--danger); border-color:#fecaca; }
+
 /* ---------- LOGIN SCREEN ---------- */
 #loginScreen { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
 .login-box { background:#fff; border-radius:16px; padding:32px 26px; max-width:360px; width:100%; box-shadow:0 10px 30px rgba(15,23,42,.12); border:1px solid var(--border); }
