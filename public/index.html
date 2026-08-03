@@ -53,6 +53,7 @@
         <button class="tab-btn" data-tab="list">Daftar Invoice</button>
         <button class="tab-btn" data-tab="cash">Kas</button>
         <button class="tab-btn" data-tab="items">Kelola Item</button>
+        <button class="tab-btn" data-tab="simulasi">Simulasi Harga</button>
         <button class="tab-btn" data-tab="settings">Pengaturan</button>
       </nav>
     </header>
@@ -100,7 +101,13 @@
         </div>
 
         <div class="card">
-          <h2>Tren Omzet vs HPP (12 Bulan Terakhir)</h2>
+          <h2>Tren 12 Bulan Terakhir</h2>
+          <div class="prod-metric-toggle" id="trendMetricToggle">
+            <button data-metric="all" class="active" onclick="setTrendMetric('all')">Semua</button>
+            <button data-metric="omzet" onclick="setTrendMetric('omzet')">Omzet</button>
+            <button data-metric="hpp" onclick="setTrendMetric('hpp')">HPP</button>
+            <button data-metric="profit" onclick="setTrendMetric('profit')">Profit</button>
+          </div>
           <div id="trendChart" class="chart-box"></div>
         </div>
         <div class="card">
@@ -328,6 +335,46 @@
         <div class="card">
           <h2>Database Item</h2>
           <div id="itemListWrap" class="mini-cards"><p class="muted">Memuat...</p></div>
+        </div>
+      </section>
+
+      <!-- TAB: SIMULASI HARGA -->
+      <section id="tab-simulasi" class="tab-content">
+        <div class="card">
+          <h2>🧮 Simulasi Perhitungan Harga</h2>
+          <p class="hint">Kalkulator cepat untuk jawab pertanyaan customer (mis. "berapa harga cetak banner ukuran 2x1 meter?"). Hitung dulu di sini, tidak tersimpan ke database — kalau sudah pas, bisa langsung dipakai jadi invoice.</p>
+          <table class="items-table" id="simTable">
+            <thead>
+              <tr>
+                <th>Deskripsi Bahan</th>
+                <th style="width:90px">Mode</th>
+                <th style="width:65px">P (cm)</th>
+                <th style="width:65px">L (cm)</th>
+                <th style="width:100px">Harga</th>
+                <th style="width:55px">Qty</th>
+                <th style="width:110px">Subtotal</th>
+                <th style="width:36px"></th>
+              </tr>
+            </thead>
+            <tbody id="simBody"></tbody>
+          </table>
+          <button type="button" id="simAddRowBtn" class="btn-secondary">+ Tambah Baris</button>
+
+          <div class="summary-box" style="margin-top:14px">
+            <div class="total-row"><span>Total Simulasi</span><strong id="simGrandTotal">Rp 0</strong></div>
+          </div>
+
+          <div class="actions">
+            <button type="button" id="simCopyBtn" class="btn-secondary">📋 Salin Hasil</button>
+            <button type="button" id="simToInvoiceBtn" class="btn-primary">🧾 Pakai di Buat Invoice</button>
+            <button type="button" id="simClearBtn" class="btn-secondary">🗑️ Kosongkan</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Cara Pakai</h2>
+          <p class="hint" style="margin-bottom:6px"><strong>Mode "Per m²"</strong> — untuk bahan yang dijual per meter persegi (banner, flexi, sticker, dll). Isi Panjang & Lebar dalam cm, lalu Harga per m². Sistem otomatis hitung luasnya.</p>
+          <p class="hint" style="margin:0"><strong>Mode "Per Satuan"</strong> — untuk bahan yang dijual per lembar/pcs/paket (kolom P & L diabaikan). Isi Harga per satuan langsung.</p>
         </div>
       </section>
 

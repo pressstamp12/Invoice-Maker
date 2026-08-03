@@ -128,6 +128,7 @@ function initApp() {
 
   wireImageUpload('cashierSigUploadBtn', 'cashierSigFile', 'cashierSignature', 'signatures', updateSigPreview);
   wireImageUpload('companyLogoUploadBtn', 'companyLogoFile', 'companyLogo', 'logos');
+  initSimUI();
 
   loadGoogleCharts();
 }
@@ -158,6 +159,7 @@ function loadGoogleCharts() {
 /* ---------------- TABS ---------------- */
 function initTabs() {
   const map = { list: loadInvoiceList, items: loadItemsList, create: () => { loadItemsCache(); loadCustomersCache(); },
+    simulasi: () => { loadItemsCache(); if (!$('simBody').children.length) addSimRow(); },
     dashboard: loadDashboard, cash: loadCashTab,
     settings: () => { loadCompanyList(); loadCashierList(); initImportUI(); } };
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -180,6 +182,7 @@ function loadSettings() {
     cashiersCache = s.cashiers || [];
     bankAccountsCache = s.bankAccounts || [];
     accountsCache = s.activeAccounts || []; // sudah ikut di respons getSettings, hemat 1 request
+    renderFilterPills(); // supaya pills kasir langsung muncul, tidak nunggu dashboard selesai duluan
     fillCompanyDropdown();
     fillCashierDropdown();
     fillImportCompanyDropdown();
@@ -745,32 +748,15 @@ function downloadPdfFromPreview() {
     toast('PDF diunduh');
   });
 }
-function dataUriToBlob(dataUri) {
-  const parts = dataUri.split(',');
-  const mimeMatch = /data:([^;]+)/.exec(parts[0]);
-  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-  const bytes = atob(parts[1]);
-  const arr = new Uint8Array(bytes.length);
-  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-  return new Blob([arr], { type: mime });
-}
 function triggerDownload(href, name) {
-  let url = href;
-  // data: URI diubah jadi Blob URL dulu — di banyak browser HP, unduhan lewat data:
-  // langsung tidak memicu notifikasi "Buka/Bagikan" karena dianggap bukan file biasa.
-  // Blob URL jauh lebih konsisten dikenali sebagai unduhan file sungguhan.
-  if (href.indexOf('data:') === 0) {
-    url = URL.createObjectURL(dataUriToBlob(href));
-    setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
-  }
   const a = document.createElement('a');
-  a.href = url; a.download = name;
+  a.href = href; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
 
-  // Cadangan: kalau notifikasi HP tetap tidak muncul, tombol ini selalu ada untuk buka file-nya.
+  // Cadangan: kalau notifikasi HP tidak muncul, tombol ini selalu ada untuk buka file-nya.
   const fbWrap = $('downloadFallbackWrap'), fb = $('downloadFallbackLink');
   if (fbWrap && fb) {
-    fb.href = url;
+    fb.href = href;
     fb.textContent = '📄 Buka ' + name + ' (kalau tidak ada notifikasi)';
     fbWrap.classList.remove('hidden');
   }
@@ -822,6 +808,141 @@ function onClientNameChange() {
     if (!val('clientAddress').trim()) setVal('clientAddress', match.address || '');
     toast('Data klien "' + match.name + '" otomatis terisi');
   }
+}
+
+/* ---------------- SIMULASI HARGA (kalkulator lokal, tidak tersimpan ke DB) ---------------- */
+let simCounter = 0;
+function addSimRow() {
+  simCounter++;
+  const tr = document.createElement('tr');
+  tr.dataset.id = simCounter;
+  tr.innerHTML = `
+    <td><input type="text" class="sim-desc" list="itemsDatalist" placeholder="mis. Banner Flexi Korea"></td>
+    <td><select class="sim-mode">
+      <option value="area">Per m²</option>
+      <option value="unit">Per Satuan</option>
+    </select></td>
+    <td><input type="number" class="sim-p" min="0" step="any" placeholder="cm"></td>
+    <td><input type="number" class="sim-l" min="0" step="any" placeholder="cm"></td>
+    <td><input type="number" class="sim-price" min="0" step="any" placeholder="0"></td>
+    <td><input type="number" class="sim-qty" min="0" step="any" value="1"></td>
+    <td class="sim-subtotal">${formatMoney(0)}</td>
+    <td><button type="button" class="remove-item-btn" title="Hapus baris">&times;</button></td>`;
+  $('simBody').appendChild(tr);
+  tr.querySelector('.sim-desc').addEventListener('change', () => onSimDescChange(tr));
+  tr.querySelectorAll('.sim-p, .sim-l, .sim-price, .sim-qty').forEach(el => el.addEventListener('input', () => recalcSimRow(tr)));
+  tr.querySelector('.sim-mode').addEventListener('change', () => { toggleSimModeFields(tr); recalcSimRow(tr); });
+  tr.querySelector('.remove-item-btn').addEventListener('click', () => { tr.remove(); recalcSimTotal(); });
+  toggleSimModeFields(tr);
+  recalcSimRow(tr);
+}
+function toggleSimModeFields(tr) {
+  const isArea = tr.querySelector('.sim-mode').value === 'area';
+  tr.querySelector('.sim-p').disabled = !isArea;
+  tr.querySelector('.sim-l').disabled = !isArea;
+  tr.querySelector('.sim-p').placeholder = isArea ? 'cm' : '(tidak dipakai)';
+  tr.querySelector('.sim-l').placeholder = isArea ? 'cm' : '(tidak dipakai)';
+}
+function onSimDescChange(tr) {
+  const desc = tr.querySelector('.sim-desc').value.trim();
+  const match = itemsCache.find(it => it.itemName.toLowerCase() === desc.toLowerCase());
+  if (match) {
+    tr.querySelector('.sim-price').value = match.defaultPrice;
+    recalcSimRow(tr);
+  }
+}
+function simRowArea(tr) {
+  const p = parseFloat(tr.querySelector('.sim-p').value) || 0;
+  const l = parseFloat(tr.querySelector('.sim-l').value) || 0;
+  return (p / 100) * (l / 100); // cm -> m2
+}
+function recalcSimRow(tr) {
+  const isArea = tr.querySelector('.sim-mode').value === 'area';
+  const price = parseFloat(tr.querySelector('.sim-price').value) || 0;
+  const qty = parseFloat(tr.querySelector('.sim-qty').value) || 0;
+  const perUnit = isArea ? simRowArea(tr) * price : price;
+  const subtotal = perUnit * qty;
+  tr.querySelector('.sim-subtotal').textContent = formatMoney(subtotal);
+  recalcSimTotal();
+}
+function recalcSimTotal() {
+  let total = 0;
+  document.querySelectorAll('#simBody tr').forEach(tr => {
+    const isArea = tr.querySelector('.sim-mode').value === 'area';
+    const price = parseFloat(tr.querySelector('.sim-price').value) || 0;
+    const qty = parseFloat(tr.querySelector('.sim-qty').value) || 0;
+    const perUnit = isArea ? simRowArea(tr) * price : price;
+    total += perUnit * qty;
+  });
+  setTxt('simGrandTotal', formatMoney(total));
+}
+function getSimRowsData() {
+  const rows = [];
+  document.querySelectorAll('#simBody tr').forEach(tr => {
+    const desc = tr.querySelector('.sim-desc').value.trim();
+    const isArea = tr.querySelector('.sim-mode').value === 'area';
+    const p = parseFloat(tr.querySelector('.sim-p').value) || 0;
+    const l = parseFloat(tr.querySelector('.sim-l').value) || 0;
+    const price = parseFloat(tr.querySelector('.sim-price').value) || 0;
+    const qty = parseFloat(tr.querySelector('.sim-qty').value) || 0;
+    const area = isArea ? (p / 100) * (l / 100) : 0;
+    const perUnit = isArea ? area * price : price;
+    if (!desc || qty <= 0) return;
+    rows.push({ desc, isArea, p, l, price, qty, area, perUnit, subtotal: perUnit * qty });
+  });
+  return rows;
+}
+function simCopyResult() {
+  const rows = getSimRowsData();
+  if (!rows.length) { toast('Belum ada baris simulasi yang valid', true); return; }
+  let text = '📋 SIMULASI HARGA\n\n';
+  let total = 0;
+  rows.forEach(r => {
+    text += '• ' + r.desc + (r.isArea ? ` (${r.p}x${r.l}cm = ${r.area.toFixed(2)}m²)` : '') + '\n';
+    text += `  ${r.qty} x ${formatMoney(r.perUnit)} = ${formatMoney(r.subtotal)}\n`;
+    total += r.subtotal;
+  });
+  text += '\nTOTAL: ' + formatMoney(total);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => toast('Hasil disalin, siap dikirim ke customer'))
+      .catch(() => fallbackCopyText(text));
+  } else {
+    fallbackCopyText(text);
+  }
+}
+function fallbackCopyText(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); toast('Hasil disalin'); } catch (e) { toast('Gagal menyalin', true); }
+  ta.remove();
+}
+function simToInvoice() {
+  const rows = getSimRowsData();
+  if (!rows.length) { toast('Belum ada baris simulasi yang valid', true); return; }
+  document.querySelector('.tab-btn[data-tab="create"]').click();
+  $('itemsBody').innerHTML = ''; itemCounter = 0;
+  rows.forEach(r => {
+    addItemRow({
+      desc: r.desc + (r.isArea ? ` (${r.p}x${r.l}cm)` : ''),
+      qty: r.qty, unit: r.isArea ? 'm²' : '', price: r.perUnit
+    });
+  });
+  recalcTotals();
+  toast('Item dari simulasi sudah dipindah ke form invoice');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function initSimUI() {
+  const addBtn = $('simAddRowBtn');
+  if (!addBtn || addBtn.dataset.bound) return;
+  addBtn.dataset.bound = '1';
+  addBtn.addEventListener('click', () => addSimRow());
+  $('simCopyBtn').addEventListener('click', simCopyResult);
+  $('simToInvoiceBtn').addEventListener('click', simToInvoice);
+  $('simClearBtn').addEventListener('click', () => {
+    if (!confirm('Kosongkan semua baris simulasi?')) return;
+    $('simBody').innerHTML = ''; simCounter = 0; addSimRow();
+  });
 }
 
 /* ---------------- UPLOAD GAMBAR (tanda tangan / logo) ---------------- */
@@ -1056,19 +1177,29 @@ function goToUnpaidInvoices() {
   syncListFilterUI(); renderInvoiceList();
 }
 
+let _trendMetric = 'all';
+function setTrendMetric(m) {
+  _trendMetric = m;
+  document.querySelectorAll('#trendMetricToggle button').forEach(b => b.classList.toggle('active', b.dataset.metric === m));
+  if (_lastDashboardData) drawTrendChart(_lastDashboardData.monthlyData || []);
+}
 function drawTrendChart(monthly) {
   if (!chartsLoaded || !monthly) return;
   try {
     const data = new google.visualization.DataTable();
     data.addColumn('string', 'Bulan');
-    ['Omzet', 'HPP', 'Profit'].forEach(c => data.addColumn('number', c));
-    monthly.forEach(m => data.addRow([m.month, m.omzet, m.hpp, m.profit]));
+    const metricDefs = { omzet: ['Omzet', '#1e3a5f'], hpp: ['HPP', '#93c5fd'], profit: ['Profit', '#16a34a'] };
+    const keys = _trendMetric === 'all' ? ['omzet', 'hpp', 'profit'] : [_trendMetric];
+    keys.forEach(k => data.addColumn('number', metricDefs[k][0]));
+    monthly.forEach(m => data.addRow([m.month, ...keys.map(k => m[k])]));
+    const colors = keys.map(k => metricDefs[k][1]);
     const isMobile = window.innerWidth < 640;
+    const single = keys.length === 1;
     new google.visualization.ColumnChart($('trendChart')).draw(data, {
-      legend: { position: 'top', textStyle: { fontSize: 11 } },
-      chartArea: { width: isMobile ? '80%' : '85%', height: isMobile ? '58%' : '70%', top: 28, bottom: isMobile ? 78 : 40 },
-      colors: ['#1e3a5f', '#93c5fd', '#16a34a'],
-      bar: { groupWidth: isMobile ? '75%' : '70%' },
+      legend: { position: single ? 'none' : 'top', textStyle: { fontSize: 11 } },
+      chartArea: { width: isMobile ? '82%' : '88%', height: isMobile ? (single ? '68%' : '58%') : (single ? '78%' : '70%'), top: 24, bottom: isMobile ? 78 : 40 },
+      colors: colors,
+      bar: { groupWidth: single ? '55%' : (isMobile ? '75%' : '70%') },
       hAxis: {
         textStyle: { fontSize: isMobile ? 9 : 11 },
         slantedText: isMobile,
