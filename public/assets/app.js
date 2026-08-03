@@ -87,8 +87,8 @@ function initApp() {
   initTabs();
   initItemsTable();
   setVal('invoiceDate', todayStr());
-  loadItemsCache();
-  loadCustomersCache();
+  // Item & data customer di-lazy-load saat tab "Buat Invoice" dibuka (lihat initTabs()),
+  // tidak perlu di-fetch di awal buka app -> mempercepat loading pertama.
   loadSettings();
   loadDashboard();
 
@@ -179,6 +179,7 @@ function loadSettings() {
     companiesCache = s.companies || [];
     cashiersCache = s.cashiers || [];
     bankAccountsCache = s.bankAccounts || [];
+    accountsCache = s.activeAccounts || []; // sudah ikut di respons getSettings, hemat 1 request
     fillCompanyDropdown();
     fillCashierDropdown();
     fillImportCompanyDropdown();
@@ -186,8 +187,22 @@ function loadSettings() {
     loadCompanyList();
     loadCashierList();
     loadBankList();
-    loadAccountsCache();
+    checkDriveLinks();
   }, { loading: false });
+}
+function checkDriveLinks() {
+  const box = $('settingsDriveWarning');
+  if (!box) return;
+  const badCashiers = cashiersCache.filter(c => c.signatureUrl && /drive\.google\.com/i.test(c.signatureUrl));
+  const badCompanies = companiesCache.filter(c => c.logoUrl && /drive\.google\.com/i.test(c.logoUrl));
+  if (!badCashiers.length && !badCompanies.length) { box.innerHTML = ''; return; }
+  let html = `<div class="import-summary" style="background:#fef3c7;color:#92400e">
+    ⚠️ <strong>Ditemukan gambar yang pakai link Google Drive</strong> — biasanya GAGAL muncul di PDF/JPG (tapi normal di preview).
+    Sebaiknya upload ulang lewat tombol "📤 Upload" di form masing-masing:<br>`;
+  if (badCashiers.length) html += `Kasir: ${badCashiers.map(c => escapeHtml(c.name)).join(', ')}<br>`;
+  if (badCompanies.length) html += `Perusahaan (logo): ${badCompanies.map(c => escapeHtml(c.name)).join(', ')}`;
+  html += `</div>`;
+  box.innerHTML = html;
 }
 function loadAccountsCache() {
   run('getActiveAccounts', [], list => { accountsCache = list || []; }, { loading: false });
@@ -237,6 +252,7 @@ function onSubmitCompanyForm(e) {
     defaultBankId: val('companyDefaultBank')
   };
   if (!data.name.trim()) { toast('Nama perusahaan wajib diisi', true); return; }
+  warnIfDriveLink(data.logoUrl, 'Logo perusahaan');
   run('saveCompany', [data], () => { toast('Perusahaan disimpan'); resetCompanyForm(); loadSettings(); });
 }
 function resetCompanyForm() {
@@ -290,7 +306,13 @@ function onSubmitCashierForm(e) {
   const data = { cashierId: val('editCashierId'), name: val('cashierName'),
     phone: val('cashierPhone'), signatureUrl: val('cashierSignature').trim() };
   if (!data.name.trim()) { toast('Nama kasir wajib diisi', true); return; }
+  warnIfDriveLink(data.signatureUrl, 'Tanda tangan');
   run('saveCashier', [data], () => { toast('Kasir disimpan'); resetCashierForm(); loadSettings(); });
+}
+function warnIfDriveLink(url, label) {
+  if (url && /drive\.google\.com/i.test(url)) {
+    toast(label + ' pakai link Google Drive — biasanya GAGAL muncul di PDF/JPG. Gunakan tombol Upload di atas, bukan paste link Drive.', true);
+  }
 }
 function resetCashierForm() {
   $('cashierForm').reset(); setVal('editCashierId', '');

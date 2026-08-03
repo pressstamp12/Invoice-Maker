@@ -128,13 +128,14 @@
 
   /* ============ SETTINGS ============ */
   async function getSettings() {
-    const [companies, cashiers, bankAccounts, currencyRow] = await Promise.all([
+    const [companies, cashiers, bankAccounts, currencyRow, activeAccounts] = await Promise.all([
       getCompanies(), getCashiers(), getBankAccounts(),
-      sb.from('app_settings').select('value').eq('key', 'CURRENCY').maybeSingle()
+      sb.from('app_settings').select('value').eq('key', 'CURRENCY').maybeSingle(),
+      getActiveAccounts()
     ]);
     return {
       currency: (currencyRow.data && currencyRow.data.value) || (companies[0] && companies[0].currency) || 'Rp',
-      companies, cashiers, bankAccounts
+      companies, cashiers, bankAccounts, activeAccounts
     };
   }
   async function saveGlobalSettings(s) {
@@ -217,7 +218,8 @@
 
   async function getInvoiceList() {
     const [invRows, purchases, cashiers, companies] = await Promise.all([
-      sb.from('invoices').select('*').order('created_at', { ascending: false }).then(ok),
+      sb.from('invoices').select('invoice_number, invoice_date, client_name, total, status, subtotal, discount, company_id, cashier_id, created_at')
+        .order('created_at', { ascending: false }).then(ok),
       sb.from('purchases').select('invoice_number,total_cost').then(ok),
       getCashiers(), getCompanies()
     ]);
@@ -566,7 +568,7 @@
   async function getDashboardData(filterCashierId) {
     const filter = filterCashierId || '';
     const [invRows, purchases, cashiersList, companiesList] = await Promise.all([
-      sb.from('invoices').select('*').then(ok),
+      sb.from('invoices').select('invoice_number, invoice_date, discount, subtotal, total, status, company_id, cashier_id, items_json').then(ok),
       sb.from('purchases').select('invoice_number,total_cost').then(ok),
       getCashiers(), getCompanies()
     ]);
@@ -719,11 +721,11 @@
     return { success: true };
   }
 
-  async function computeAccountBalances() {
+  function computeAccountBalancesFrom(accountsRaw, flowsRaw) {
     const bal = {};
-    (await getAccountsRaw()).forEach(a => { bal[a.accountId] = a.openingBalance; });
+    accountsRaw.forEach(a => { bal[a.accountId] = a.openingBalance; });
     const get = id => (bal[id] === undefined ? (bal[id] = 0) : bal[id]);
-    (await getCashFlowRaw()).forEach(f => {
+    flowsRaw.forEach(f => {
       if (f.type === 'in') bal[f.accountId] = get(f.accountId) + f.amount;
       else if (f.type === 'out') bal[f.accountId] = get(f.accountId) - f.amount;
       else if (f.type === 'transfer') { bal[f.accountId] = get(f.accountId) - f.amount; bal[f.toAccountId] = get(f.toAccountId) + f.amount; }
@@ -732,7 +734,10 @@
   }
   async function getCashData(filter) {
     filter = filter || {};
-    const [accounts, balances, allFlows] = await Promise.all([getAccountsRaw(), computeAccountBalances(), getCashFlowRaw()]);
+    // Sebelumnya accounts & cashflow tidak sengaja di-fetch 2x (sekali di sini, sekali lagi
+    // di dalam computeAccountBalances) -> setiap buka tab Kas kirim request 2x lipat dari perlu.
+    const [accounts, allFlows] = await Promise.all([getAccountsRaw(), getCashFlowRaw()]);
+    const balances = computeAccountBalancesFrom(accounts, allFlows);
     const nameById = {}; accounts.forEach(a => { nameById[a.accountId] = a.name; });
 
     let flows = allFlows.slice();
