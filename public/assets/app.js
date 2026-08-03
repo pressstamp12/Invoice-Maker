@@ -696,6 +696,8 @@ function openPreview(inv) {
   setTxt('previewInvNumber', inv);
   $('shareLinkBox').classList.add('hidden');
   $('btnShareWa').classList.add('hidden');
+  const fbWrap = $('downloadFallbackWrap');
+  if (fbWrap) fbWrap.classList.add('hidden');
   const wrap = $('previewFrameWrap');
   wrap.innerHTML = '<p class="muted">Memuat preview...</p>';
   $('previewModalOverlay').classList.remove('hidden');
@@ -743,10 +745,35 @@ function downloadPdfFromPreview() {
     toast('PDF diunduh');
   });
 }
+function dataUriToBlob(dataUri) {
+  const parts = dataUri.split(',');
+  const mimeMatch = /data:([^;]+)/.exec(parts[0]);
+  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+  const bytes = atob(parts[1]);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
 function triggerDownload(href, name) {
+  let url = href;
+  // data: URI diubah jadi Blob URL dulu — di banyak browser HP, unduhan lewat data:
+  // langsung tidak memicu notifikasi "Buka/Bagikan" karena dianggap bukan file biasa.
+  // Blob URL jauh lebih konsisten dikenali sebagai unduhan file sungguhan.
+  if (href.indexOf('data:') === 0) {
+    url = URL.createObjectURL(dataUriToBlob(href));
+    setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+  }
   const a = document.createElement('a');
-  a.href = href; a.download = name;
+  a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
+
+  // Cadangan: kalau notifikasi HP tetap tidak muncul, tombol ini selalu ada untuk buka file-nya.
+  const fbWrap = $('downloadFallbackWrap'), fb = $('downloadFallbackLink');
+  if (fbWrap && fb) {
+    fb.href = url;
+    fb.textContent = '📄 Buka ' + name + ' (kalau tidak ada notifikasi)';
+    fbWrap.classList.remove('hidden');
+  }
 }
 function downloadJpgFromPreview() {
   run('generateInvoiceJpg', [currentPreviewInv], res => {
