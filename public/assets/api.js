@@ -406,15 +406,38 @@
     return { url: data.publicUrl };
   }
 
+  async function getItemBranchPrices(itemId) {
+    const { data, error } = await sb.from('item_branch_prices').select('company_id, price').eq('item_id', itemId);
+    if (error) throw new Error(error.message);
+    const map = {};
+    (data || []).forEach(r => { map[r.company_id] = r.price; });
+    return map;
+  }
+  async function saveItemBranchPrices(itemId, pricesMap) {
+    const companyIds = Object.keys(pricesMap || {});
+    for (const cid of companyIds) {
+      const p = pricesMap[cid];
+      if (p === null || p === undefined || p === '') {
+        await sb.from('item_branch_prices').delete().eq('item_id', itemId).eq('company_id', cid);
+      } else {
+        await sb.from('item_branch_prices').upsert({ item_id: itemId, company_id: cid, price: num(p) });
+      }
+    }
+    return { success: true };
+  }
+
   /* ============ MASTER ITEM ============ */
   async function getItems() {
     const data = ok(await sb.from('items').select('*').order('created_at', { ascending: false }));
-    return data.map(r => ({ itemId: r.item_id, itemName: r.item_name, category: r.category, defaultPrice: r.default_price, unit: r.unit }));
+    return data.map(r => ({ itemId: r.item_id, itemName: r.item_name, category: r.category, defaultPrice: r.default_price, unit: r.unit, minOrder: r.min_order || 1, terms: r.terms || '' }));
   }
   async function saveItem(item) {
     if (!item.itemName || !item.itemName.trim()) throw new Error('Nama item wajib diisi.');
     const id = (item.itemId && item.itemId.trim()) ? item.itemId : await nextId('items', 'item_id', 'ITM-');
-    ok(await sb.from('items').upsert({ item_id: id, item_name: item.itemName.trim(), category: item.category || '', default_price: num(item.defaultPrice), unit: item.unit || '' }));
+    ok(await sb.from('items').upsert({
+      item_id: id, item_name: item.itemName.trim(), category: item.category || '', default_price: num(item.defaultPrice),
+      unit: item.unit || '', min_order: num(item.minOrder) > 0 ? num(item.minOrder) : 1, terms: item.terms || ''
+    }));
     return { success: true, itemId: id };
   }
   async function deleteItem(id) {
@@ -565,7 +588,7 @@
   }
 
   /* ============ DASHBOARD ============ */
-  async function getDashboardData(filterCashierId) {
+  async function getDashboardData(filterCashierId, onlyPaid) {
     const filter = filterCashierId || '';
     const [invRows, purchases, cashiersList, companiesList] = await Promise.all([
       sb.from('invoices').select('invoice_number, invoice_date, discount, subtotal, total, status, company_id, cashier_id, items_json').then(ok),
@@ -579,7 +602,7 @@
       totalOmzet: 0, totalHpp: 0, grossProfit: 0, margin: 0, totalInvoices: 0,
       paidCount: 0, unpaidCount: 0, piutang: 0, monthlyData: [], topItems: [],
       cashiers: cashiersList.map(c => ({ cashierId: c.cashierId, name: c.name })),
-      filterCashierId: filter, cashierStats: [], cashierBenchmark: null, companyStats: []
+      filterCashierId: filter, onlyPaid: !!onlyPaid, cashierStats: [], cashierBenchmark: null, companyStats: []
     };
 
     const monthMap = {}, monthOrder = [], now = new Date();
@@ -600,25 +623,36 @@
       const revenue = Math.max(subtotal - discount, 0);
       const hpp = hppMap[inv] || 0;
       const profit = revenue - hpp;
+      // Kalau mode "Hanya Lunas" aktif, invoice yang belum dibayar tidak ikut menambah
+      // omzet/HPP/profit (uangnya belum benar-benar diterima) — tapi tetap terhitung
+      // di jumlah invoice & piutang, supaya tetap kelihatan pekerjaan yang masih pending.
+      const countsForRevenue = !onlyPaid || status === 'Paid';
 
       const b = bucket(perCashier, cashierId);
-      b.omzet += revenue; b.hpp += hpp; b.profit += profit; b.count++;
+      if (countsForRevenue) { b.omzet += revenue; b.hpp += hpp; b.profit += profit; }
+      b.count++;
       status === 'Paid' ? b.paid++ : b.unpaid++;
 
       const cb = bucket(perCompany, companyId, { piutang: 0 });
-      cb.omzet += revenue; cb.hpp += hpp; cb.profit += profit; cb.count++;
+      if (countsForRevenue) { cb.omzet += revenue; cb.hpp += hpp; cb.profit += profit; }
+      cb.count++;
       if (status === 'Paid') cb.paid++; else { cb.unpaid++; cb.piutang += total; }
 
       if (filter && cashierId !== filter) return;
 
-      result.totalInvoices++; result.totalOmzet += revenue; result.totalHpp += hpp;
+      result.totalInvoices++;
+      if (countsForRevenue) { result.totalOmzet += revenue; result.totalHpp += hpp; }
       if (status === 'Paid') result.paidCount++; else { result.unpaidCount++; result.piutang += total; }
 
-      const dObj = new Date(row.invoice_date);
-      if (!isNaN(dObj.getTime())) {
-        const key = dObj.getFullYear() + '-' + pad(dObj.getMonth() + 1, 2);
-        if (monthMap[key]) { monthMap[key].omzet += revenue; monthMap[key].hpp += hpp; monthMap[key].profit += profit; }
+      if (countsForRevenue) {
+        const dObj = new Date(row.invoice_date);
+        if (!isNaN(dObj.getTime())) {
+          const key = dObj.getFullYear() + '-' + pad(dObj.getMonth() + 1, 2);
+          if (monthMap[key]) { monthMap[key].omzet += revenue; monthMap[key].hpp += hpp; monthMap[key].profit += profit; }
+        }
       }
+      // Item terlaris dihitung dari SEMUA invoice (indikator permintaan/demand),
+      // tidak tergantung status lunas.
       (row.items_json || []).forEach(it => { tally[it.desc] = (tally[it.desc] || 0) + num(it.qty); });
     });
 
@@ -821,7 +855,7 @@
     getCompanies, saveCompany, deleteCompany,
     getCashiers, saveCashier, deleteCashier,
     getSettings, saveGlobalSettings,
-    getItems, saveItem, deleteItem, getCustomers, uploadImage,
+    getItems, saveItem, deleteItem, getCustomers, uploadImage, getItemBranchPrices, saveItemBranchPrices,
     saveInvoice, getInvoiceList, getInvoiceByNumber, deleteInvoice, updateInvoiceStatus, getInvoiceNumbers,
     getInvoicePreviewHtml, generateInvoicePdf, generateInvoiceJpg, savePdfToDrive, saveJpgToDrive,
     getPurchasesByInvoice, savePurchases, getHppModalData,

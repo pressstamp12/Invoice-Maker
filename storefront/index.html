@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Katalog Online</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1e3a5f">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <!-- LAYAR: PILIH LOKASI -->
+  <div id="branchScreen">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div>
+          <h1 id="storeNameBranch">Pilih Lokasi</h1>
+          <p>Pilih cabang terdekat untuk lihat harga & pesan</p>
+        </div>
+      </div>
+    </header>
+    <div id="branchListWrap" class="branch-list"><p class="muted">Memuat lokasi...</p></div>
+  </div>
+
+  <!-- LAYAR: KATALOG (per cabang) -->
+  <div id="catalogScreen" class="hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div>
+          <h1 id="storeName">Katalog Online</h1>
+          <p id="storeTagline"></p>
+          <p style="margin:4px 0 0;font-size:12px"><a href="#" id="changeBranchBtn" style="color:#fff;opacity:.9">📍 <span id="activeBranchName"></span> · Ganti lokasi</a></p>
+        </div>
+        <button id="cartBtn" class="cart-fab">🛒 Keranjang<span id="cartBadge" class="cart-badge hidden">0</span></button>
+      </div>
+    </header>
+
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="🔍 Cari produk...">
+    </div>
+
+    <div id="catalogWrap" class="catalog-grid"><p class="muted">Memuat...</p></div>
+
+    <p class="footer-note">Harga dapat berubah sewaktu-waktu. Pesanan akan dikonfirmasi ulang oleh admin via WhatsApp.</p>
+  </div>
+
+  <!-- MODAL: DETAIL ITEM -->
+  <div id="itemModalOverlay" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="itemModalName">-</h2>
+        <button type="button" id="itemModalCloseBtn" class="modal-close">&times;</button>
+      </div>
+      <p id="itemModalCat" style="color:var(--muted);font-size:13px;margin:0 0 6px"></p>
+      <p id="itemModalPrice" style="font-size:18px;font-weight:800;color:var(--primary);margin:0 0 4px"></p>
+      <p id="itemModalMin" style="font-size:12px;color:var(--muted);margin:0 0 4px"></p>
+      <p id="itemModalTerms" class="hidden" style="font-size:12px;color:var(--muted);background:#f8fafc;padding:8px 10px;border-radius:8px;margin:8px 0"></p>
+
+      <div class="qty-stepper">
+        <button type="button" id="itemQtyMinus">−</button>
+        <input type="number" id="itemQty" value="1" min="1">
+        <button type="button" id="itemQtyPlus">+</button>
+      </div>
+
+      <button type="button" id="addToCartBtn" class="btn-primary">+ Tambah ke Keranjang</button>
+    </div>
+  </div>
+
+  <!-- MODAL: KERANJANG -->
+  <div id="cartModalOverlay" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>🛒 Keranjang</h2>
+        <button type="button" id="cartCloseBtn" class="modal-close">&times;</button>
+      </div>
+      <div id="cartItemsWrap"><p class="muted">Memuat...</p></div>
+      <div class="summary-box"><span>Total</span><strong id="cartGrandTotal">Rp 0</strong></div>
+      <button type="button" id="checkoutBtn" class="btn-primary">🟢 Checkout via WhatsApp</button>
+    </div>
+  </div>
+
+  <!-- MODAL: FORM CHECKOUT -->
+  <div id="checkoutFormOverlay" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Data Pemesan</h2>
+        <button type="button" id="checkoutFormCloseBtn" class="modal-close">&times;</button>
+      </div>
+      <form id="checkoutForm">
+        <div class="field"><label>Nama *</label><input type="text" id="custName" required></div>
+        <div class="field"><label>No. WhatsApp *</label><input type="tel" id="custPhone" placeholder="08xxxxxxxxxx" required></div>
+        <div class="field"><label>Catatan (opsional)</label><textarea id="custNotes" rows="2" placeholder="mis. warna, ukuran, waktu pengambilan"></textarea></div>
+        <button type="submit" class="btn-primary">📲 Kirim Pesanan via WhatsApp</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="assets/storefront-config.js"></script>
+  <script src="assets/storefront.js"></script>
+</body>
+</html>

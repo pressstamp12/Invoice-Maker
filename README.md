@@ -227,6 +227,59 @@ Cara update: timpa `public/assets/api.js`, `public/assets/app.js`,
 paket ini → commit → push. Tidak perlu ubah database (schema.sql tidak
 berubah di update ini).
 
+### Update: Harga per Cabang + Pilih Lokasi
+
+Karena tiap titik Slawe (Setu, Mustikajaya, Cikarang) punya harga & nomor WA
+berbeda, katalog publik sekarang **wajib pilih lokasi dulu** sebelum lihat
+katalog:
+
+- Setiap item di form Katalog Admin sekarang ada bagian **"Harga per
+  Cabang"** — daftar semua Perusahaan/Kop yang ada, tiap baris bisa diisi
+  harga khusus untuk cabang itu. **Kosongkan** kalau cabang itu mau pakai
+  Harga Jual Default biasa.
+- Nomor WhatsApp tujuan checkout otomatis dari **nomor telepon di data
+  Perusahaan (Kop)** masing-masing cabang — tidak perlu isi nomor WA
+  terpisah di `storefront-config.js` lagi.
+- Customer buka katalog publik → pilih lokasi dulu (nama & alamat diambil
+  dari data Perusahaan) → baru lihat katalog dengan harga sesuai lokasi
+  itu → checkout otomatis ke nomor WA cabang tersebut. Pilihan lokasi
+  diingat di HP customer (tidak perlu pilih ulang tiap buka).
+- **Penting:** pastikan field "Telepon" di setiap Perusahaan (Kop) —
+  Pengaturan → Perusahaan — sudah diisi nomor WhatsApp yang benar-benar
+  aktif, karena itu yang jadi tujuan checkout.
+
+Setelah update ini, jalankan ulang `supabase/schema.sql` (menambah tabel
+`item_branch_prices` + izin baca publik untuk data Perusahaan).
+
+## Update besar: Katalog Publik + Order via WhatsApp (2 aplikasi terpisah)
+
+Sekarang ada **2 aplikasi terpisah** yang berbagi database Supabase yang sama:
+
+- `public/` → **Aplikasi Admin** (perlu login) — semuanya seperti sekarang: dashboard, invoice, kas, katalog internal, dll.
+- `storefront/` → **Katalog Publik** (tanpa login, bisa diakses siapa saja) — customer lihat produk, isi keranjang, checkout langsung buka WhatsApp dengan pesan pesanan siap kirim ke Anda.
+
+### Perubahan di Admin
+- Setiap item di Katalog sekarang punya 2 field baru: **Minimum Order** dan **Syarat & Ketentuan** (mis. "DP 50%, waktu produksi 2 hari") — ini yang tampil ke customer di katalog publik.
+- **Semua item di Katalog otomatis tampil ke publik** (tidak ada penanda khusus, sesuai yang diminta). Kalau nanti mau ada item yang disembunyikan dari publik, tinggal bilang, saya tambahkan fitur toggle-nya.
+
+### Setup Katalog Publik (storefront)
+
+1. **Jalankan ulang `supabase/schema.sql`** (aman, idempotent) — ini menambahkan kolom `min_order`/`terms` ke tabel items, dan izin akses baca publik untuk katalog.
+2. Buka `storefront/assets/storefront-config.js`, isi:
+   ```js
+   window.SUPABASE_URL = "..."       // sama seperti punya Admin
+   window.SUPABASE_ANON_KEY = "..."  // sama seperti punya Admin
+   window.STORE_WA_NUMBER = "62812xxxxxxxx"  // nomor WA Anda, format 62xxx tanpa + atau 0 di depan
+   window.STORE_NAME = "Nama Toko Anda"
+   window.STORE_TAGLINE = "Kalimat singkat di bawah nama toko"
+   ```
+3. Push ke GitHub seperti biasa (folder `storefront/` ikut ter-push).
+4. **Deploy sebagai situs terpisah** di Vercel: New Project → pilih repo yang sama → kali ini set **Root Directory** ke `storefront` (bukan `public`). Anda akan dapat URL kedua, mis. `https://katalog-usaha-anda.vercel.app`, terpisah dari URL admin.
+5. Bagikan URL katalog publik ini ke customer (bisa dipasang di bio Instagram, status WA, dll). Mereka **tidak perlu login apapun**.
+
+### Cara kerja checkout
+Customer pilih produk → atur jumlah → checkout → isi Nama & No. WA → tap "Kirim Pesanan via WhatsApp" → otomatis buka WhatsApp dengan pesan berisi daftar pesanan & total, tinggal customer tap **Kirim**. Tidak ada data order yang tersimpan di database — semuanya lewat chat WhatsApp seperti biasa Anda terima order.
+
 ## Menambah user/karyawan baru
 
 Supabase Dashboard → Authentication → Users → Add user (email + password).

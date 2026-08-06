@@ -44,8 +44,12 @@ create table if not exists items (
   category      text default '',
   default_price numeric default 0,
   unit          text default '',
+  min_order     numeric default 1,
+  terms         text default '',
   created_at    timestamptz not null default now()
 );
+alter table items add column if not exists min_order numeric default 1;
+alter table items add column if not exists terms text default '';
 
 -- ---------- ACCOUNTS (Akun Kas: Brankas / Pribadi / Bank) ----------
 create table if not exists accounts (
@@ -125,6 +129,16 @@ create table if not exists customers (
 );
 create unique index if not exists idx_customers_name_lower on customers (lower(name));
 
+-- ---------- HARGA PER CABANG (override default_price per item per lokasi) ----------
+-- Kosong/tidak ada baris = pakai items.default_price. Ada baris = pakai harga ini
+-- untuk kombinasi item + cabang tersebut.
+create table if not exists item_branch_prices (
+  item_id    text not null references items(item_id) on delete cascade,
+  company_id text not null references companies(company_id) on delete cascade,
+  price      numeric not null default 0,
+  primary key (item_id, company_id)
+);
+
 -- ---------- GLOBAL SETTINGS (pengganti PropertiesService) ----------
 create table if not exists app_settings (
   key   text primary key,
@@ -148,11 +162,12 @@ alter table purchases      enable row level security;
 alter table cash_flow      enable row level security;
 alter table app_settings   enable row level security;
 alter table customers      enable row level security;
+alter table item_branch_prices enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['bank_accounts','companies','cashiers','items','accounts','invoices','purchases','cash_flow','app_settings','customers']
+  foreach t in array array['bank_accounts','companies','cashiers','items','accounts','invoices','purchases','cash_flow','app_settings','customers','item_branch_prices']
   loop
     execute format('drop policy if exists "auth_all_%1$s" on %1$s', t);
     execute format(
@@ -161,6 +176,20 @@ begin
     );
   end loop;
 end $$;
+
+-- ============================================================
+-- AKSES PUBLIK (untuk katalog customer, tanpa login)
+-- Hanya BACA item yang diizinkan untuk siapa saja (anon).
+-- Tambah/edit/hapus item tetap hanya untuk user yang login (lihat policy di atas).
+-- ============================================================
+drop policy if exists "public_read_items" on items;
+create policy "public_read_items" on items for select using (true);
+
+drop policy if exists "public_read_companies" on companies;
+create policy "public_read_companies" on companies for select using (true);
+
+drop policy if exists "public_read_item_branch_prices" on item_branch_prices;
+create policy "public_read_item_branch_prices" on item_branch_prices for select using (true);
 
 -- ============================================================
 -- STORAGE (pengganti Google Drive untuk PDF/JPG invoice)

@@ -11,6 +11,12 @@ let itemsCache = [], companiesCache = [], cashiersCache = [], accountsCache = []
 let chartsLoaded = false;
 let currentPreviewInv = '';
 let dashboardFilterCashier = '';
+let dashboardOnlyPaid = true;
+function setDashboardMode(m) {
+  dashboardOnlyPaid = (m === 'paid');
+  document.querySelectorAll('#dashboardModeFilter button').forEach(b => b.classList.toggle('active', b.dataset.val === m));
+  loadDashboard();
+}
 let _lastDashboardData = null, _prodMetric = 'omzet', _companyMetric = 'omzet';
 let _importParsedRows = null;
 let hppAccounts = [], hppCurrentInv = '';
@@ -1014,24 +1020,45 @@ function renderItemCatalog() {
       <div class="ic-name">${escapeHtml(it.itemName)}</div>
       <div class="ic-cat">${escapeHtml(it.category || '-')}</div>
       <div class="ic-price">${formatMoney(it.defaultPrice)}</div>
-      <div class="ic-unit">/ ${escapeHtml(it.unit || 'satuan')}</div>
+      <div class="ic-unit">/ ${escapeHtml(it.unit || 'satuan')}${(it.minOrder && it.minOrder > 1) ? ' · Min ' + it.minOrder : ''}</div>
     </div>`).join('');
 }
 function onItemCardTap(id) {
   const it = itemsCache.find(x => x.itemId === id); if (!it) return;
   openSimModal({ desc: it.itemName, price: it.defaultPrice });
 }
+function renderItemBranchPriceInputs(pricesMap) {
+  pricesMap = pricesMap || {};
+  const wrap = $('itemBranchPriceWrap'); if (!wrap) return;
+  if (!companiesCache.length) { wrap.innerHTML = '<p class="hint">Belum ada data Perusahaan/Cabang. Tambahkan dulu di Pengaturan.</p>'; return; }
+  wrap.innerHTML = companiesCache.map(c => `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div style="flex:1;font-size:13px;font-weight:600">${escapeHtml(c.name)}</div>
+      <input type="number" class="branch-price-input" data-company="${c.companyId}" min="0" step="any" placeholder="pakai default" style="width:140px" value="${pricesMap[c.companyId] != null ? pricesMap[c.companyId] : ''}">
+    </div>`).join('');
+}
 function onSubmitItemForm(e) {
   e.preventDefault();
   const data = { itemId: val('editItemId'), itemName: val('itemName'), category: val('itemCategory'),
-    defaultPrice: parseFloat(val('itemPrice')) || 0, unit: val('itemUnit') };
+    defaultPrice: parseFloat(val('itemPrice')) || 0, unit: val('itemUnit'),
+    minOrder: parseFloat(val('itemMinOrder')) || 1, terms: val('itemTerms') };
   if (!data.itemName.trim()) { toast('Nama item wajib diisi', true); return; }
-  run('saveItem', [data], () => { toast('Item disimpan'); closeItemFormCard(); loadItemsList(); });
+  const branchPrices = {};
+  document.querySelectorAll('.branch-price-input').forEach(el => {
+    const v = el.value.trim();
+    branchPrices[el.dataset.company] = v === '' ? null : parseFloat(v);
+  });
+  run('saveItem', [data], res => {
+    run('saveItemBranchPrices', [res.itemId, branchPrices], () => {
+      toast('Item disimpan'); closeItemFormCard(); loadItemsList();
+    }, { loading: false });
+  });
 }
 function closeItemFormCard() {
   $('itemFormCard').classList.add('hidden');
-  $('itemForm').reset(); setVal('editItemId', '');
+  $('itemForm').reset(); setVal('editItemId', ''); setVal('itemMinOrder', 1);
   setTxt('itemFormTitle', 'Tambah Item Baru');
+  renderItemBranchPriceInputs({});
 }
 function resetItemForm() { closeItemFormCard(); }
 function cancelItemEdit() { closeItemFormCard(); }
@@ -1040,8 +1067,10 @@ function editItem(id) {
   $('itemFormCard').classList.remove('hidden');
   setVal('editItemId', it.itemId); setVal('itemName', it.itemName);
   setVal('itemCategory', it.category || ''); setVal('itemPrice', it.defaultPrice || 0);
-  setVal('itemUnit', it.unit || '');
+  setVal('itemUnit', it.unit || ''); setVal('itemMinOrder', it.minOrder || 1); setVal('itemTerms', it.terms || '');
   setTxt('itemFormTitle', 'Edit Item');
+  renderItemBranchPriceInputs({});
+  run('getItemBranchPrices', [id], prices => renderItemBranchPriceInputs(prices), { loading: false });
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function deleteItemUi(id) {
@@ -1054,7 +1083,7 @@ function initCatalogUI() {
     addBtn.dataset.bound = '1';
     addBtn.addEventListener('click', () => {
       const card = $('itemFormCard');
-      if (card.classList.contains('hidden')) { card.classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); $('itemName').focus(); }
+      if (card.classList.contains('hidden')) { card.classList.remove('hidden'); renderItemBranchPriceInputs({}); window.scrollTo({ top: 0, behavior: 'smooth' }); $('itemName').focus(); }
       else closeItemFormCard();
     });
   }
@@ -1067,7 +1096,7 @@ function initCatalogUI() {
 /* ---------------- DASHBOARD ---------------- */
 function loadDashboard() {
   renderFilterPills();
-  run('getDashboardData', [dashboardFilterCashier], d => {
+  run('getDashboardData', [dashboardFilterCashier, dashboardOnlyPaid], d => {
     try {
       if (!d || typeof d !== 'object') { showDashboardError('Data dashboard kosong / tidak valid dari server.'); return; }
       if (d.cashiers && !cashiersCache.length) {

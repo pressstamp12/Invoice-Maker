@@ -61,6 +61,14 @@
       <!-- TAB: DASHBOARD -->
       <section id="tab-dashboard" class="tab-content active">
         <div class="card">
+          <h2>Mode Perhitungan Omzet & Profit</h2>
+          <div class="filter-pills" id="dashboardModeFilter">
+            <button class="filter-pill active" data-val="paid" onclick="setDashboardMode('paid')">✅ Hanya yang Lunas</button>
+            <button class="filter-pill" data-val="all" onclick="setDashboardMode('all')">📋 Semua Invoice</button>
+          </div>
+          <p class="hint" style="margin:8px 0 0">"Hanya Lunas" = omzet & profit dari uang yang sudah benar-benar diterima. "Semua Invoice" = termasuk yang masih Belum Lunas (nilai tagihan, uangnya belum tentu cair).</p>
+        </div>
+        <div class="card">
           <h2>Filter Kasir</h2>
           <div id="cashierFilterPills" class="filter-pills"><span class="muted">Memuat...</span></div>
         </div>
@@ -336,7 +344,15 @@
               <div class="field"><label>Kategori</label><input type="text" id="itemCategory" placeholder="Contoh: Jasa / Produk"></div>
               <div class="field"><label>Harga Jual Default</label><input type="number" id="itemPrice" min="0" step="any" value="0"></div>
               <div class="field"><label>Satuan</label><input type="text" id="itemUnit" placeholder="pcs / jam / paket"></div>
+              <div class="field"><label>Minimum Order</label><input type="number" id="itemMinOrder" min="1" step="any" value="1"></div>
+              <div class="field full"><label>Syarat & Ketentuan (opsional)</label><input type="text" id="itemTerms" placeholder="mis. DP 50%, waktu produksi 2 hari, dll"></div>
+              <div class="field full">
+                <label>Harga per Cabang (opsional)</label>
+                <p class="hint" style="margin:-2px 0 8px">Kosongkan salah satu cabang untuk pakai Harga Jual Default di atas. Ini yang tampil di katalog publik sesuai lokasi yang dipilih customer.</p>
+                <div id="itemBranchPriceWrap"></div>
+              </div>
             </div>
+            <p class="hint" style="margin:6px 0 0">Item ini akan tampil di halaman katalog publik (customer bisa lihat & pesan langsung).</p>
             <div class="actions">
               <button type="submit" class="btn-primary">💾 Simpan Item</button>
               <button type="button" id="cancelItemEditBtn" class="btn-secondary">Batal</button>
