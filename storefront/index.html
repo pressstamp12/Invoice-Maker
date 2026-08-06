@@ -17,7 +17,6 @@
       <div>
         <h1 id="storeName">Katalog Online</h1>
         <p id="storeTagline"></p>
-        <p style="margin:4px 0 0;font-size:12px"><a href="#" id="changeBranchBtn" style="color:#fff;opacity:.9">📍 <span id="activeBranchLabel">Pilih lokasi saat checkout</span></a></p>
       </div>
       <button id="cartBtn" class="cart-fab">🛒 Keranjang<span id="cartBadge" class="cart-badge hidden">0</span></button>
     </div>
@@ -64,6 +63,7 @@
       </div>
       <p id="itemModalCat" style="color:var(--muted);font-size:13px;margin:0 0 6px"></p>
       <img id="itemModalImg" class="hidden" alt="" style="width:100%;max-height:220px;object-fit:cover;border-radius:12px;margin-bottom:10px">
+      <div id="itemModalPlaceholder" class="hidden" style="margin-bottom:10px;border-radius:12px;overflow:hidden"></div>
       <p id="itemModalDesc" class="hidden" style="font-size:13px;color:var(--text);margin:0 0 8px"></p>
       <p id="itemModalPrice" style="font-size:18px;font-weight:800;color:var(--primary);margin:0 0 4px"></p>
       <p id="itemModalMin" style="font-size:12px;color:var(--muted);margin:0 0 4px"></p>
@@ -83,12 +83,15 @@
   <div id="cartModalOverlay" class="modal-overlay hidden">
     <div class="modal-box">
       <div class="modal-header">
-        <h2>🛒 Keranjang</h2>
+        <h2>🛒 Keranjang Saya</h2>
         <button type="button" id="cartCloseBtn" class="modal-close">&times;</button>
       </div>
       <div id="cartItemsWrap"><p class="muted">Memuat...</p></div>
-      <div class="summary-box"><span>Perkiraan Total</span><strong id="cartGrandTotal">Rp 0</strong></div>
-      <button type="button" id="checkoutBtn" class="btn-primary">🟢 Checkout via WhatsApp</button>
+      <div class="cart-summary">
+        <div class="cart-summary-row"><span>Perkiraan Total</span><strong id="cartGrandTotal">Rp 0</strong></div>
+        <p class="cart-summary-note">Harga final dikonfirmasi sesuai lokasi saat checkout</p>
+      </div>
+      <button type="button" id="checkoutBtn" class="btn-primary btn-checkout">🟢 Checkout via WhatsApp</button>
     </div>
   </div>
 
@@ -99,6 +102,7 @@
         <h2>Data Pemesan</h2>
         <button type="button" id="checkoutFormCloseBtn" class="modal-close">&times;</button>
       </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Pesanan untuk lokasi: <strong id="checkoutBranchName">-</strong> · <a href="#" id="checkoutChangeBranchBtn">Ganti lokasi</a></p>
       <form id="checkoutForm">
         <div class="field"><label>Nama *</label><input type="text" id="custName" required></div>
         <div class="field"><label>No. WhatsApp *</label><input type="tel" id="custPhone" placeholder="08xxxxxxxxxx" required></div>

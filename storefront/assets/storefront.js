@@ -46,6 +46,21 @@
     if (c.indexOf('produk') !== -1) return '📦';
     return '🧾';
   }
+  // Placeholder gambar bermerek per kategori — dipakai kalau item belum punya foto asli
+  function categoryPlaceholder(category) {
+    const c = (category || '').toLowerCase();
+    if (c.indexOf('banner') !== -1 || c.indexOf('spanduk') !== -1 || c.indexOf('flexi') !== -1 || c.indexOf('flexy') !== -1) return 'assets/category-placeholders/banner.svg';
+    if (c.indexOf('stiker') !== -1 || c.indexOf('sticker') !== -1) return 'assets/category-placeholders/sticker.svg';
+    if (c.indexOf('kertas') !== -1 || c.indexOf('cartoon') !== -1 || c.indexOf('cetak') !== -1 || c.indexOf('print') !== -1) return 'assets/category-placeholders/print.svg';
+    if (c.indexOf('produk') !== -1 || c.indexOf('merchandise') !== -1) return 'assets/category-placeholders/product.svg';
+    return 'assets/category-placeholders/default.svg';
+  }
+  function photoOrPlaceholderHtml(it, heightClass) {
+    if (it.imageUrl) return `<img src="${escapeHtml(it.imageUrl)}" class="${heightClass}" alt="">`;
+    return `<div class="${heightClass} ic-placeholder" style="background-image:url('${categoryPlaceholder(it.category)}')">
+      <span class="ic-placeholder-brand">${escapeHtml(window.STORE_NAME || '')}</span>
+    </div>`;
+  }
   // Harga item untuk cabang tertentu; fallback ke harga default kalau cabang itu tidak punya override
   function priceForBranch(it, companyId) {
     if (companyId && it.branchPrices && it.branchPrices[companyId] != null) return it.branchPrices[companyId];
@@ -57,9 +72,11 @@
     const { data, error } = await sb.from('companies').select('company_id, name, address, phone').order('name');
     if (!error) branches = (data || []).map(r => ({ companyId: r.company_id, name: r.name, address: r.address || '', phone: r.phone || '' }));
   }
-  function updateBranchLabel() {
-    $('activeBranchLabel').textContent = activeBranch ? (activeBranch.name + ' · Ganti') : 'Pilih lokasi saat checkout';
+  function updateCheckoutBranchLabel() {
+    const el = $('checkoutBranchName');
+    if (el) el.textContent = activeBranch ? activeBranch.name : '-';
   }
+  function onChangeBranchClick(e) { e.preventDefault(); $('checkoutFormOverlay').classList.add('hidden'); openBranchPicker('checkout'); }
   function openBranchPicker(action) {
     pendingAction = action || null;
     const wrap = $('branchPickerList');
@@ -79,13 +96,12 @@
     const b = branches.find(x => x.companyId === companyId); if (!b) return;
     activeBranch = b;
     localStorage.setItem(BRANCH_KEY, JSON.stringify(b));
-    updateBranchLabel();
+    updateCheckoutBranchLabel();
     $('branchPickerOverlay').classList.add('hidden');
     const action = pendingAction; pendingAction = null;
     if (action === 'wa') openGeneralWa();
     else if (action === 'checkout') openCheckout();
   }
-  function onChangeBranchClick(e) { e.preventDefault(); openBranchPicker(null); }
   function onWaFabClick(e) {
     e.preventDefault();
     if (activeBranch) openGeneralWa();
@@ -157,7 +173,7 @@
     return `
       <div class="item-card">
         <div class="ic-photo-wrap" onclick="Store.openItem('${it.itemId}')">
-          ${it.imageUrl ? `<img src="${escapeHtml(it.imageUrl)}" class="ic-photo" alt="">` : `<div class="ic-icon">${itemIcon(it.category)}</div>`}
+          ${photoOrPlaceholderHtml(it, 'ic-photo')}
         </div>
         <div class="ic-body" onclick="Store.openItem('${it.itemId}')">
           <div class="ic-name">${escapeHtml(it.itemName)}</div>
@@ -199,8 +215,15 @@
     const it = items.find(x => x.itemId === id); if (!it) return;
     _activeItemId = id;
     const img = $('itemModalImg');
-    if (it.imageUrl) { img.src = it.imageUrl; img.classList.remove('hidden'); }
-    else { img.classList.add('hidden'); img.removeAttribute('src'); }
+    const phWrap = $('itemModalPlaceholder');
+    if (it.imageUrl) {
+      img.src = it.imageUrl; img.classList.remove('hidden');
+      phWrap.classList.add('hidden'); phWrap.innerHTML = '';
+    } else {
+      img.classList.add('hidden'); img.removeAttribute('src');
+      phWrap.classList.remove('hidden');
+      phWrap.innerHTML = photoOrPlaceholderHtml(it, 'ic-photo-lg');
+    }
     $('itemModalName').textContent = it.itemName;
     $('itemModalCat').textContent = it.category || '';
     $('itemModalPrice').textContent = 'Mulai dari ' + formatMoney(it.minPrice) + ' / ' + (it.unit || 'satuan');
@@ -238,7 +261,7 @@
     const wrap = $('cartItemsWrap');
     const ids = Object.keys(cart).filter(id => cart[id] > 0);
     if (!ids.length) {
-      wrap.innerHTML = '<p class="muted">Keranjang masih kosong.</p>';
+      wrap.innerHTML = '<div class="cart-empty"><div class="cart-empty-icon">🛒</div><p>Keranjang masih kosong</p><p class="cart-empty-sub">Yuk mulai pilih produk favorit Anda</p></div>';
       $('cartGrandTotal').textContent = formatMoney(0);
       $('checkoutBtn').disabled = true;
       return;
@@ -251,16 +274,18 @@
       const qty = cart[id], price = priceForBranch(it, activeBranch && activeBranch.companyId), sub = qty * price;
       total += sub;
       return `<div class="cart-row">
+        <div class="cart-row-thumb">${photoOrPlaceholderHtml(it, 'cart-thumb-img')}</div>
         <div class="cart-row-main">
           <div class="cart-row-name">${escapeHtml(it.itemName)}</div>
-          <div class="cart-row-sub">${formatMoney(price)} x ${qty} = ${formatMoney(sub)}</div>
+          <div class="cart-row-sub">${formatMoney(price)} / ${escapeHtml(it.unit || 'satuan')}</div>
+          <div class="cart-row-actions">
+            <button onclick="Store.cartStep('${id}',-1)">−</button>
+            <span>${qty}</span>
+            <button onclick="Store.cartStep('${id}',1)">+</button>
+            <button class="cart-del" onclick="Store.cartRemove('${id}')">🗑️</button>
+          </div>
         </div>
-        <div class="cart-row-actions">
-          <button onclick="Store.cartStep('${id}',-1)">−</button>
-          <span>${qty}</span>
-          <button onclick="Store.cartStep('${id}',1)">+</button>
-          <button class="cart-del" onclick="Store.cartRemove('${id}')">🗑️</button>
-        </div>
+        <div class="cart-row-sub-total">${formatMoney(sub)}</div>
       </div>`;
     }).join('');
     $('cartGrandTotal').textContent = formatMoney(total);
@@ -281,6 +306,7 @@
     if (!Object.keys(cart).length) return;
     if (!activeBranch) { closeCart(); openBranchPicker('checkout'); return; }
     closeCart();
+    updateCheckoutBranchLabel();
     $('checkoutFormOverlay').classList.remove('hidden');
   }
   function closeCheckoutForm() { $('checkoutFormOverlay').classList.add('hidden'); }
@@ -337,7 +363,7 @@
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(BRANCH_KEY) || 'null'); } catch (e) {}
     if (saved && saved.companyId) activeBranch = saved;
-    updateBranchLabel();
+    updateCheckoutBranchLabel();
 
     startHeroRotation();
     loadItems();
@@ -353,7 +379,7 @@
     $('addToCartBtn').addEventListener('click', addToCart);
     $('checkoutFormCloseBtn').addEventListener('click', closeCheckoutForm);
     $('checkoutForm').addEventListener('submit', submitCheckout);
-    $('changeBranchBtn').addEventListener('click', onChangeBranchClick);
+    $('checkoutChangeBranchBtn').addEventListener('click', onChangeBranchClick);
     $('branchPickerCloseBtn').addEventListener('click', closeBranchPicker);
     $('floatingWaBtn').addEventListener('click', onWaFabClick);
   });

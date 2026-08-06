@@ -1,0 +1,21 @@
+<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1e3a5f"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg)"/>
+  <g opacity="0.12">
+    <circle cx="60" cy="50" r="70" fill="#fff"/>
+    <circle cx="340" cy="240" r="80" fill="#fff"/>
+  </g>
+  <!-- gift box -->
+  <g transform="translate(140,80)">
+    <rect x="0" y="50" width="120" height="90" rx="6" fill="#ffffff" opacity="0.95"/>
+    <rect x="0" y="30" width="120" height="26" rx="6" fill="#dbeafe"/>
+    <rect x="52" y="30" width="16" height="110" fill="#3b82f6"/>
+    <path d="M60 30 C40 10 20 10 20 30 C20 40 40 32 60 30 Z" fill="#93c5fd"/>
+    <path d="M60 30 C80 10 100 10 100 30 C100 40 80 32 60 30 Z" fill="#93c5fd"/>
+  </g>
+</svg>
