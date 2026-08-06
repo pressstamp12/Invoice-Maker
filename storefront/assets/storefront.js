@@ -6,9 +6,9 @@
 
   let items = [];
   let branches = [];
-  let branchPrices = {}; // { itemId: price } untuk cabang yang dipilih
-  let activeBranch = null; // { companyId, name, phone }
+  let activeBranch = null; // { companyId, name, phone } — boleh null sampai customer checkout/chat
   let cart = {}; // { itemId: qty }
+  let pendingAction = null; // 'wa' | 'checkout' — dijalankan setelah lokasi dipilih
 
   function loadCart() {
     try { cart = JSON.parse(localStorage.getItem(CART_KEY) || '{}'); } catch (e) { cart = {}; }
@@ -46,47 +46,56 @@
     if (c.indexOf('produk') !== -1) return '📦';
     return '🧾';
   }
+  // Harga item untuk cabang tertentu; fallback ke harga default kalau cabang itu tidak punya override
+  function priceForBranch(it, companyId) {
+    if (companyId && it.branchPrices && it.branchPrices[companyId] != null) return it.branchPrices[companyId];
+    return it.defaultPrice;
+  }
 
-  /* ---------------- PILIH LOKASI ---------------- */
+  /* ---------------- LOKASI ---------------- */
   async function loadBranches() {
-    $('branchListWrap').innerHTML = '<p class="muted">Memuat lokasi...</p>';
     const { data, error } = await sb.from('companies').select('company_id, name, address, phone').order('name');
-    if (error) { $('branchListWrap').innerHTML = '<p class="muted">Gagal memuat lokasi. Coba refresh halaman.</p>'; return; }
-    branches = (data || []).map(r => ({ companyId: r.company_id, name: r.name, address: r.address || '', phone: r.phone || '' }));
-    renderBranchList();
+    if (!error) branches = (data || []).map(r => ({ companyId: r.company_id, name: r.name, address: r.address || '', phone: r.phone || '' }));
   }
-  function renderBranchList() {
-    const wrap = $('branchListWrap');
-    if (!branches.length) { wrap.innerHTML = '<p class="muted">Belum ada lokasi tersedia.</p>'; return; }
-    wrap.innerHTML = branches.map(b => `
-      <div class="branch-card" onclick="Store.selectBranch('${b.companyId}')">
-        <div class="branch-name">📍 ${escapeHtml(b.name)}</div>
-        ${b.address ? `<div class="branch-addr">${escapeHtml(b.address)}</div>` : ''}
-      </div>`).join('');
+  function updateBranchLabel() {
+    $('activeBranchLabel').textContent = activeBranch ? (activeBranch.name + ' · Ganti') : 'Pilih lokasi saat checkout';
   }
-  function selectBranch(companyId) {
+  function openBranchPicker(action) {
+    pendingAction = action || null;
+    const wrap = $('branchPickerList');
+    if (!branches.length) {
+      wrap.innerHTML = '<p class="muted">Lokasi belum tersedia. Coba lagi sebentar.</p>';
+    } else {
+      wrap.innerHTML = branches.map(b => `
+        <div class="branch-card" onclick="Store.pickBranch('${b.companyId}')">
+          <div class="branch-name">📍 ${escapeHtml(b.name)}</div>
+          ${b.address ? `<div class="branch-addr">${escapeHtml(b.address)}</div>` : ''}
+        </div>`).join('');
+    }
+    $('branchPickerOverlay').classList.remove('hidden');
+  }
+  function closeBranchPicker() { $('branchPickerOverlay').classList.add('hidden'); pendingAction = null; }
+  function pickBranch(companyId) {
     const b = branches.find(x => x.companyId === companyId); if (!b) return;
     activeBranch = b;
     localStorage.setItem(BRANCH_KEY, JSON.stringify(b));
-    enterCatalog();
+    updateBranchLabel();
+    $('branchPickerOverlay').classList.add('hidden');
+    const action = pendingAction; pendingAction = null;
+    if (action === 'wa') openGeneralWa();
+    else if (action === 'checkout') openCheckout();
   }
-  function changeBranch(e) {
-    if (e) e.preventDefault();
-    localStorage.removeItem(BRANCH_KEY);
-    activeBranch = null;
-    $('catalogScreen').classList.add('hidden');
-    $('branchScreen').classList.remove('hidden');
-    loadBranches();
+  function onChangeBranchClick(e) { e.preventDefault(); openBranchPicker(null); }
+  function onWaFabClick(e) {
+    e.preventDefault();
+    if (activeBranch) openGeneralWa();
+    else openBranchPicker('wa');
   }
-  function enterCatalog() {
-    $('branchScreen').classList.add('hidden');
-    $('catalogScreen').classList.remove('hidden');
-    $('activeBranchName').textContent = activeBranch.name;
+  function openGeneralWa() {
     const waNumber = normalizePhone(activeBranch.phone);
-    const waMsg = encodeURIComponent(`Halo, saya mau tanya-tanya produk ${window.STORE_NAME || ''} (${activeBranch.name}).`);
-    $('floatingWaBtn').href = waNumber ? ('https://wa.me/' + waNumber + '?text=' + waMsg) : '#';
-    startHeroRotation();
-    loadItems();
+    if (!waNumber) { toast('Nomor WhatsApp lokasi ini belum diatur, hubungi admin.', true); return; }
+    const msg = encodeURIComponent(`Halo, saya mau tanya-tanya produk ${window.STORE_NAME || ''} (${activeBranch.name}).`);
+    window.open('https://wa.me/' + waNumber + '?text=' + msg, '_blank');
   }
 
   /* ---------------- HERO BANNER (rotasi promo) ---------------- */
@@ -104,26 +113,32 @@
     if (!promos.length) return;
     renderHero();
     if (_heroTimer) clearInterval(_heroTimer);
-    if (promos.length > 1) {
-      _heroTimer = setInterval(() => { _heroIdx++; renderHero(); }, 4500);
-    }
+    if (promos.length > 1) _heroTimer = setInterval(() => { _heroIdx++; renderHero(); }, 4500);
   }
 
-  /* ---------------- KATALOG (per cabang) ---------------- */
+  /* ---------------- KATALOG ---------------- */
   async function loadItems() {
     $('catalogWrap').innerHTML = '<p class="muted">Memuat katalog...</p>';
     const [itemsRes, pricesRes] = await Promise.all([
       sb.from('items').select('*').eq('item_type', 'barang').order('item_name'),
-      sb.from('item_branch_prices').select('item_id, price').eq('company_id', activeBranch.companyId)
+      sb.from('item_branch_prices').select('item_id, company_id, price')
     ]);
     if (itemsRes.error) { $('catalogWrap').innerHTML = '<p class="muted">Gagal memuat katalog. Coba refresh halaman.</p>'; return; }
-    branchPrices = {};
-    (pricesRes.data || []).forEach(r => { branchPrices[r.item_id] = r.price; });
-    items = (itemsRes.data || []).map(r => ({
-      itemId: r.item_id, itemName: r.item_name, category: r.category,
-      price: branchPrices[r.item_id] != null ? branchPrices[r.item_id] : r.default_price,
-      unit: r.unit, minOrder: r.min_order || 1, terms: r.terms || '', imageUrl: r.image_url || '', description: r.description || ''
-    }));
+    const priceMap = {};
+    (pricesRes.data || []).forEach(r => {
+      if (!priceMap[r.item_id]) priceMap[r.item_id] = {};
+      priceMap[r.item_id][r.company_id] = r.price;
+    });
+    items = (itemsRes.data || []).map(r => {
+      const branchPrices = priceMap[r.item_id] || {};
+      const allPrices = [r.default_price, ...Object.values(branchPrices)].filter(p => p != null);
+      const minPrice = allPrices.length ? Math.min.apply(null, allPrices) : r.default_price;
+      return {
+        itemId: r.item_id, itemName: r.item_name, category: r.category,
+        defaultPrice: r.default_price, branchPrices, minPrice,
+        unit: r.unit, minOrder: r.min_order || 1, terms: r.terms || '', imageUrl: r.image_url || '', description: r.description || ''
+      };
+    });
     renderCatalog();
   }
 
@@ -146,7 +161,7 @@
         </div>
         <div class="ic-body" onclick="Store.openItem('${it.itemId}')">
           <div class="ic-name">${escapeHtml(it.itemName)}</div>
-          <div class="ic-price">Mulai dari <strong>${formatMoney(it.price)}</strong></div>
+          <div class="ic-price">Mulai dari <strong>${formatMoney(it.minPrice)}</strong></div>
           <div class="ic-unit">/ ${escapeHtml(it.unit || 'satuan')}${it.minOrder > 1 ? ' · Min ' + it.minOrder : ''}</div>
         </div>
         <button class="ic-buy-btn" onclick="event.stopPropagation();Store.quickAdd('${it.itemId}')">+ Beli</button>
@@ -160,8 +175,6 @@
     if (!list.length) { wrap.innerHTML = '<p class="muted">' + (q ? 'Tidak ada item cocok.' : 'Katalog masih kosong.') + '</p>'; $('catNavWrap').innerHTML = ''; return; }
 
     const groups = groupByCategory(list);
-
-    // quick-nav kategori (disembunyikan saat sedang mencari, supaya tidak membingungkan)
     $('catNavWrap').innerHTML = q ? '' : groups.map(g => `<a href="#${slugify(g.category)}" class="cat-nav-pill">${escapeHtml(g.category)}</a>`).join('');
 
     wrap.innerHTML = groups.map(g => `
@@ -180,6 +193,7 @@
     toast(it.itemName + ' ditambahkan ke keranjang');
   }
 
+  /* ---------------- DETAIL ITEM ---------------- */
   let _activeItemId = null;
   function openItem(id) {
     const it = items.find(x => x.itemId === id); if (!it) return;
@@ -189,7 +203,7 @@
     else { img.classList.add('hidden'); img.removeAttribute('src'); }
     $('itemModalName').textContent = it.itemName;
     $('itemModalCat').textContent = it.category || '';
-    $('itemModalPrice').textContent = 'Mulai dari ' + formatMoney(it.price) + ' / ' + (it.unit || 'satuan');
+    $('itemModalPrice').textContent = 'Mulai dari ' + formatMoney(it.minPrice) + ' / ' + (it.unit || 'satuan');
     $('itemModalDesc').textContent = it.description || '';
     $('itemModalDesc').classList.toggle('hidden', !it.description);
     $('itemModalTerms').textContent = it.terms || '';
@@ -217,10 +231,8 @@
     toast(it.itemName + ' ditambahkan ke keranjang');
   }
 
-  function openCart() {
-    renderCart();
-    $('cartModalOverlay').classList.remove('hidden');
-  }
+  /* ---------------- KERANJANG ---------------- */
+  function openCart() { renderCart(); $('cartModalOverlay').classList.remove('hidden'); }
   function closeCart() { $('cartModalOverlay').classList.add('hidden'); }
   function renderCart() {
     const wrap = $('cartItemsWrap');
@@ -236,13 +248,12 @@
     wrap.innerHTML = ids.map(id => {
       const it = items.find(x => x.itemId === id);
       if (!it) return '';
-      const qty = cart[id];
-      const sub = qty * it.price;
+      const qty = cart[id], price = priceForBranch(it, activeBranch && activeBranch.companyId), sub = qty * price;
       total += sub;
       return `<div class="cart-row">
         <div class="cart-row-main">
           <div class="cart-row-name">${escapeHtml(it.itemName)}</div>
-          <div class="cart-row-sub">${formatMoney(it.price)} x ${qty} = ${formatMoney(sub)}</div>
+          <div class="cart-row-sub">${formatMoney(price)} x ${qty} = ${formatMoney(sub)}</div>
         </div>
         <div class="cart-row-actions">
           <button onclick="Store.cartStep('${id}',-1)">−</button>
@@ -265,8 +276,10 @@
   }
   function cartRemove(id) { delete cart[id]; saveCart(); renderCart(); }
 
+  /* ---------------- CHECKOUT ---------------- */
   function openCheckout() {
     if (!Object.keys(cart).length) return;
+    if (!activeBranch) { closeCart(); openBranchPicker('checkout'); return; }
     closeCart();
     $('checkoutFormOverlay').classList.remove('hidden');
   }
@@ -278,6 +291,7 @@
     const phone = $('custPhone').value.trim();
     const notes = $('custNotes').value.trim();
     if (!name || !phone) { toast('Nama & No. HP wajib diisi', true); return; }
+    if (!activeBranch) { toast('Pilih lokasi dulu', true); return; }
 
     const ids = Object.keys(cart).filter(id => cart[id] > 0);
     if (!ids.length) { toast('Keranjang kosong', true); return; }
@@ -289,7 +303,7 @@
     let total = 0;
     ids.forEach((id, i) => {
       const it = items.find(x => x.itemId === id); if (!it) return;
-      const qty = cart[id], sub = qty * it.price;
+      const qty = cart[id], price = priceForBranch(it, activeBranch.companyId), sub = qty * price;
       total += sub;
       text += `${i + 1}. ${it.itemName} x ${qty} ${it.unit || ''} = ${formatMoney(sub)}\n`;
     });
@@ -320,6 +334,15 @@
     loadCart();
     updateCartBadge();
 
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(BRANCH_KEY) || 'null'); } catch (e) {}
+    if (saved && saved.companyId) activeBranch = saved;
+    updateBranchLabel();
+
+    startHeroRotation();
+    loadItems();
+    loadBranches();
+
     $('searchInput').addEventListener('input', renderCatalog);
     $('cartBtn').addEventListener('click', openCart);
     $('cartCloseBtn').addEventListener('click', closeCart);
@@ -330,18 +353,10 @@
     $('addToCartBtn').addEventListener('click', addToCart);
     $('checkoutFormCloseBtn').addEventListener('click', closeCheckoutForm);
     $('checkoutForm').addEventListener('submit', submitCheckout);
-    $('changeBranchBtn').addEventListener('click', changeBranch);
-
-    // Kalau sudah pernah pilih lokasi sebelumnya, langsung masuk katalog lokasi itu
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(BRANCH_KEY) || 'null'); } catch (e) {}
-    if (saved && saved.companyId) {
-      activeBranch = saved;
-      enterCatalog();
-    } else {
-      loadBranches();
-    }
+    $('changeBranchBtn').addEventListener('click', onChangeBranchClick);
+    $('branchPickerCloseBtn').addEventListener('click', closeBranchPicker);
+    $('floatingWaBtn').addEventListener('click', onWaFabClick);
   });
 
-  window.Store = { openItem, cartStep, cartRemove, selectBranch, quickAdd };
+  window.Store = { openItem, cartStep, cartRemove, pickBranch, quickAdd };
 })();

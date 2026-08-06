@@ -12,51 +12,47 @@
 </head>
 <body>
 
-  <!-- LAYAR: PILIH LOKASI -->
-  <div id="branchScreen">
-    <header class="topbar">
-      <div class="topbar-inner">
-        <div>
-          <h1 id="storeNameBranch">Pilih Lokasi</h1>
-          <p>Pilih cabang terdekat untuk lihat harga & pesan</p>
-        </div>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <h1 id="storeName">Katalog Online</h1>
+        <p id="storeTagline"></p>
+        <p style="margin:4px 0 0;font-size:12px"><a href="#" id="changeBranchBtn" style="color:#fff;opacity:.9">📍 <span id="activeBranchLabel">Pilih lokasi saat checkout</span></a></p>
       </div>
-    </header>
-    <div id="branchListWrap" class="branch-list"><p class="muted">Memuat lokasi...</p></div>
+      <button id="cartBtn" class="cart-fab">🛒 Keranjang<span id="cartBadge" class="cart-badge hidden">0</span></button>
+    </div>
+  </header>
+
+  <div class="search-wrap">
+    <input type="text" id="searchInput" placeholder="🔍 Cari produk...">
   </div>
 
-  <!-- LAYAR: KATALOG (per cabang) -->
-  <div id="catalogScreen" class="hidden">
-    <header class="topbar">
-      <div class="topbar-inner">
-        <div>
-          <h1 id="storeName">Katalog Online</h1>
-          <p id="storeTagline"></p>
-          <p style="margin:4px 0 0;font-size:12px"><a href="#" id="changeBranchBtn" style="color:#fff;opacity:.9">📍 <span id="activeBranchName"></span> · Ganti lokasi</a></p>
-        </div>
-        <button id="cartBtn" class="cart-fab">🛒 Keranjang<span id="cartBadge" class="cart-badge hidden">0</span></button>
-      </div>
-    </header>
-
-    <div class="search-wrap">
-      <input type="text" id="searchInput" placeholder="🔍 Cari produk...">
+  <div class="hero-banner" id="heroBanner">
+    <div class="hero-inner">
+      <h2 id="heroTitle">-</h2>
+      <p id="heroSubtitle"></p>
     </div>
+    <div class="hero-dots" id="heroDots"></div>
+  </div>
 
-    <div class="hero-banner" id="heroBanner">
-      <div class="hero-inner">
-        <h2 id="heroTitle">-</h2>
-        <p id="heroSubtitle"></p>
+  <div id="catNavWrap" class="cat-nav"></div>
+
+  <div id="catalogWrap" class="catalog-sections"><p class="muted">Memuat...</p></div>
+
+  <p class="footer-note">Harga "Mulai dari" adalah estimasi. Harga final & nomor WA tujuan menyesuaikan lokasi yang Anda pilih saat checkout.</p>
+
+  <a id="floatingWaBtn" class="wa-fab" href="#" title="Chat WhatsApp">💬</a>
+
+  <!-- MODAL: PILIH LOKASI (muncul saat checkout / mulai chat) -->
+  <div id="branchPickerOverlay" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>📍 Pilih Lokasi</h2>
+        <button type="button" id="branchPickerCloseBtn" class="modal-close">&times;</button>
       </div>
-      <div class="hero-dots" id="heroDots"></div>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Supaya harga & nomor WA yang dipakai sesuai cabang terdekat Anda.</p>
+      <div id="branchPickerList" class="branch-list" style="margin:0;padding:0"><p class="muted">Memuat lokasi...</p></div>
     </div>
-
-    <div id="catNavWrap" class="cat-nav"></div>
-
-    <div id="catalogWrap" class="catalog-sections"><p class="muted">Memuat...</p></div>
-
-    <p class="footer-note">Harga dapat berubah sewaktu-waktu. Pesanan akan dikonfirmasi ulang oleh admin via WhatsApp.</p>
-
-    <a id="floatingWaBtn" class="wa-fab" href="#" target="_blank" rel="noopener" title="Chat WhatsApp">💬</a>
   </div>
 
   <!-- MODAL: DETAIL ITEM -->
@@ -91,7 +87,7 @@
         <button type="button" id="cartCloseBtn" class="modal-close">&times;</button>
       </div>
       <div id="cartItemsWrap"><p class="muted">Memuat...</p></div>
-      <div class="summary-box"><span>Total</span><strong id="cartGrandTotal">Rp 0</strong></div>
+      <div class="summary-box"><span>Perkiraan Total</span><strong id="cartGrandTotal">Rp 0</strong></div>
       <button type="button" id="checkoutBtn" class="btn-primary">🟢 Checkout via WhatsApp</button>
     </div>
   </div>
