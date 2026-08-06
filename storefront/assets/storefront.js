@@ -82,7 +82,31 @@
     $('branchScreen').classList.add('hidden');
     $('catalogScreen').classList.remove('hidden');
     $('activeBranchName').textContent = activeBranch.name;
+    const waNumber = normalizePhone(activeBranch.phone);
+    const waMsg = encodeURIComponent(`Halo, saya mau tanya-tanya produk ${window.STORE_NAME || ''} (${activeBranch.name}).`);
+    $('floatingWaBtn').href = waNumber ? ('https://wa.me/' + waNumber + '?text=' + waMsg) : '#';
+    startHeroRotation();
     loadItems();
+  }
+
+  /* ---------------- HERO BANNER (rotasi promo) ---------------- */
+  let _heroIdx = 0, _heroTimer = null;
+  function renderHero() {
+    const promos = window.STORE_PROMOS || [];
+    if (!promos.length) { $('heroBanner').classList.add('hidden'); return; }
+    const p = promos[_heroIdx % promos.length];
+    $('heroTitle').textContent = p.title || '';
+    $('heroSubtitle').textContent = p.subtitle || '';
+    $('heroDots').innerHTML = promos.map((_, i) => `<span class="hero-dot${i === (_heroIdx % promos.length) ? ' active' : ''}"></span>`).join('');
+  }
+  function startHeroRotation() {
+    const promos = window.STORE_PROMOS || [];
+    if (!promos.length) return;
+    renderHero();
+    if (_heroTimer) clearInterval(_heroTimer);
+    if (promos.length > 1) {
+      _heroTimer = setInterval(() => { _heroIdx++; renderHero(); }, 4500);
+    }
   }
 
   /* ---------------- KATALOG (per cabang) ---------------- */
@@ -103,19 +127,57 @@
     renderCatalog();
   }
 
+  function groupByCategory(list) {
+    const groups = {}, order = [];
+    list.forEach(it => {
+      const cat = it.category && it.category.trim() ? it.category.trim() : 'Lainnya';
+      if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+      groups[cat].push(it);
+    });
+    return order.map(cat => ({ category: cat, items: groups[cat] }));
+  }
+  function slugify(s) { return 'cat-' + String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+
+  function itemCardHtml(it) {
+    return `
+      <div class="item-card">
+        <div class="ic-photo-wrap" onclick="Store.openItem('${it.itemId}')">
+          ${it.imageUrl ? `<img src="${escapeHtml(it.imageUrl)}" class="ic-photo" alt="">` : `<div class="ic-icon">${itemIcon(it.category)}</div>`}
+        </div>
+        <div class="ic-body" onclick="Store.openItem('${it.itemId}')">
+          <div class="ic-name">${escapeHtml(it.itemName)}</div>
+          <div class="ic-price">Mulai dari <strong>${formatMoney(it.price)}</strong></div>
+          <div class="ic-unit">/ ${escapeHtml(it.unit || 'satuan')}${it.minOrder > 1 ? ' · Min ' + it.minOrder : ''}</div>
+        </div>
+        <button class="ic-buy-btn" onclick="event.stopPropagation();Store.quickAdd('${it.itemId}')">+ Beli</button>
+      </div>`;
+  }
+
   function renderCatalog() {
     const wrap = $('catalogWrap');
     const q = $('searchInput').value.toLowerCase().trim();
     const list = q ? items.filter(it => it.itemName.toLowerCase().indexOf(q) !== -1 || (it.category || '').toLowerCase().indexOf(q) !== -1) : items;
-    if (!list.length) { wrap.innerHTML = '<p class="muted">' + (q ? 'Tidak ada item cocok.' : 'Katalog masih kosong.') + '</p>'; return; }
-    wrap.innerHTML = list.map(it => `
-      <div class="item-card" onclick="Store.openItem('${it.itemId}')">
-        ${it.imageUrl ? `<img src="${escapeHtml(it.imageUrl)}" class="ic-photo" alt="">` : `<div class="ic-icon">${itemIcon(it.category)}</div>`}
-        <div class="ic-name">${escapeHtml(it.itemName)}</div>
-        <div class="ic-cat">${escapeHtml(it.category || '-')}</div>
-        <div class="ic-price">${formatMoney(it.price)}</div>
-        <div class="ic-unit">/ ${escapeHtml(it.unit || 'satuan')}${it.minOrder > 1 ? ' · Min ' + it.minOrder : ''}</div>
-      </div>`).join('');
+    if (!list.length) { wrap.innerHTML = '<p class="muted">' + (q ? 'Tidak ada item cocok.' : 'Katalog masih kosong.') + '</p>'; $('catNavWrap').innerHTML = ''; return; }
+
+    const groups = groupByCategory(list);
+
+    // quick-nav kategori (disembunyikan saat sedang mencari, supaya tidak membingungkan)
+    $('catNavWrap').innerHTML = q ? '' : groups.map(g => `<a href="#${slugify(g.category)}" class="cat-nav-pill">${escapeHtml(g.category)}</a>`).join('');
+
+    wrap.innerHTML = groups.map(g => `
+      <section class="cat-section" id="${slugify(g.category)}">
+        <h2 class="cat-section-title">${escapeHtml(g.category)}</h2>
+        <div class="catalog-grid">
+          ${g.items.map(itemCardHtml).join('')}
+        </div>
+      </section>`).join('');
+  }
+
+  function quickAdd(id) {
+    const it = items.find(x => x.itemId === id); if (!it) return;
+    cart[id] = (cart[id] || 0) + (it.minOrder || 1);
+    saveCart();
+    toast(it.itemName + ' ditambahkan ke keranjang');
   }
 
   let _activeItemId = null;
@@ -127,7 +189,7 @@
     else { img.classList.add('hidden'); img.removeAttribute('src'); }
     $('itemModalName').textContent = it.itemName;
     $('itemModalCat').textContent = it.category || '';
-    $('itemModalPrice').textContent = formatMoney(it.price) + ' / ' + (it.unit || 'satuan');
+    $('itemModalPrice').textContent = 'Mulai dari ' + formatMoney(it.price) + ' / ' + (it.unit || 'satuan');
     $('itemModalDesc').textContent = it.description || '';
     $('itemModalDesc').classList.toggle('hidden', !it.description);
     $('itemModalTerms').textContent = it.terms || '';
@@ -281,5 +343,5 @@
     }
   });
 
-  window.Store = { openItem, cartStep, cartRemove, selectBranch };
+  window.Store = { openItem, cartStep, cartRemove, selectBranch, quickAdd };
 })();
