@@ -429,14 +429,18 @@
   /* ============ MASTER ITEM ============ */
   async function getItems() {
     const data = ok(await sb.from('items').select('*').order('created_at', { ascending: false }));
-    return data.map(r => ({ itemId: r.item_id, itemName: r.item_name, category: r.category, defaultPrice: r.default_price, unit: r.unit, minOrder: r.min_order || 1, terms: r.terms || '' }));
+    return data.map(r => ({
+      itemId: r.item_id, itemName: r.item_name, category: r.category, defaultPrice: r.default_price, unit: r.unit,
+      minOrder: r.min_order || 1, terms: r.terms || '', imageUrl: r.image_url || '', itemType: r.item_type || 'barang', description: r.description || ''
+    }));
   }
   async function saveItem(item) {
     if (!item.itemName || !item.itemName.trim()) throw new Error('Nama item wajib diisi.');
     const id = (item.itemId && item.itemId.trim()) ? item.itemId : await nextId('items', 'item_id', 'ITM-');
     ok(await sb.from('items').upsert({
       item_id: id, item_name: item.itemName.trim(), category: item.category || '', default_price: num(item.defaultPrice),
-      unit: item.unit || '', min_order: num(item.minOrder) > 0 ? num(item.minOrder) : 1, terms: item.terms || ''
+      unit: item.unit || '', min_order: num(item.minOrder) > 0 ? num(item.minOrder) : 1, terms: item.terms || '',
+      image_url: item.imageUrl || '', item_type: item.itemType || 'barang', description: item.description || ''
     }));
     return { success: true, itemId: id };
   }

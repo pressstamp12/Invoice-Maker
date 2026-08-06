@@ -134,6 +134,8 @@ function initApp() {
 
   wireImageUpload('cashierSigUploadBtn', 'cashierSigFile', 'cashierSignature', 'signatures', updateSigPreview);
   wireImageUpload('companyLogoUploadBtn', 'companyLogoFile', 'companyLogo', 'logos');
+  wireImageUpload('itemImageUploadBtn', 'itemImageFile', 'itemImageUrl', 'item-photos', updateItemImagePreview);
+  $('itemImageUrl').addEventListener('input', updateItemImagePreview);
   initSimUI();
   initCatalogUI();
 
@@ -1016,8 +1018,8 @@ function renderItemCatalog() {
         <button onclick="editItem('${it.itemId}')" title="Edit">✏️</button>
         <button class="del-btn" onclick="deleteItemUi('${it.itemId}')" title="Hapus">🗑️</button>
       </div>
-      <div class="ic-icon">${itemIcon(it.category)}</div>
-      <div class="ic-name">${escapeHtml(it.itemName)}</div>
+      ${it.imageUrl ? `<img src="${escapeHtml(it.imageUrl)}" class="ic-photo" alt="">` : `<div class="ic-icon">${itemIcon(it.category)}</div>`}
+      <div class="ic-name">${escapeHtml(it.itemName)}${it.itemType === 'jasa' ? ' <span class="acc-badge other" style="font-size:9px;vertical-align:middle">Jasa</span>' : ''}</div>
       <div class="ic-cat">${escapeHtml(it.category || '-')}</div>
       <div class="ic-price">${formatMoney(it.defaultPrice)}</div>
       <div class="ic-unit">/ ${escapeHtml(it.unit || 'satuan')}${(it.minOrder && it.minOrder > 1) ? ' · Min ' + it.minOrder : ''}</div>
@@ -1041,8 +1043,10 @@ function onSubmitItemForm(e) {
   e.preventDefault();
   const data = { itemId: val('editItemId'), itemName: val('itemName'), category: val('itemCategory'),
     defaultPrice: parseFloat(val('itemPrice')) || 0, unit: val('itemUnit'),
-    minOrder: parseFloat(val('itemMinOrder')) || 1, terms: val('itemTerms') };
+    minOrder: parseFloat(val('itemMinOrder')) || 1, terms: val('itemTerms'),
+    imageUrl: val('itemImageUrl'), itemType: val('itemType'), description: val('itemDescription') };
   if (!data.itemName.trim()) { toast('Nama item wajib diisi', true); return; }
+  warnIfDriveLink(data.imageUrl, 'Gambar produk');
   const branchPrices = {};
   document.querySelectorAll('.branch-price-input').forEach(el => {
     const v = el.value.trim();
@@ -1056,20 +1060,29 @@ function onSubmitItemForm(e) {
 }
 function closeItemFormCard() {
   $('itemFormCard').classList.add('hidden');
-  $('itemForm').reset(); setVal('editItemId', ''); setVal('itemMinOrder', 1);
+  $('itemForm').reset(); setVal('editItemId', ''); setVal('itemMinOrder', 1); setVal('itemType', 'barang');
   setTxt('itemFormTitle', 'Tambah Item Baru');
   renderItemBranchPriceInputs({});
+  updateItemImagePreview();
 }
 function resetItemForm() { closeItemFormCard(); }
 function cancelItemEdit() { closeItemFormCard(); }
+function updateItemImagePreview() {
+  const url = val('itemImageUrl').trim();
+  const img = $('itemImagePreview');
+  if (url) { img.src = url; img.classList.remove('hidden'); }
+  else { img.classList.add('hidden'); img.removeAttribute('src'); }
+}
 function editItem(id) {
   const it = itemsCache.find(x => x.itemId === id); if (!it) return;
   $('itemFormCard').classList.remove('hidden');
   setVal('editItemId', it.itemId); setVal('itemName', it.itemName);
   setVal('itemCategory', it.category || ''); setVal('itemPrice', it.defaultPrice || 0);
   setVal('itemUnit', it.unit || ''); setVal('itemMinOrder', it.minOrder || 1); setVal('itemTerms', it.terms || '');
+  setVal('itemImageUrl', it.imageUrl || ''); setVal('itemType', it.itemType || 'barang'); setVal('itemDescription', it.description || '');
   setTxt('itemFormTitle', 'Edit Item');
   renderItemBranchPriceInputs({});
+  updateItemImagePreview();
   run('getItemBranchPrices', [id], prices => renderItemBranchPriceInputs(prices), { loading: false });
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }

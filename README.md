@@ -227,6 +227,26 @@ Cara update: timpa `public/assets/api.js`, `public/assets/app.js`,
 paket ini → commit → push. Tidak perlu ubah database (schema.sql tidak
 berubah di update ini).
 
+### Update: Gambar Produk, Barang vs Jasa, Deskripsi
+
+- Setiap item sekarang punya field **Gambar Produk** (upload lewat tombol
+  📤 Upload, sama seperti tanda tangan/logo) dan **Deskripsi** (teks bebas,
+  cocok untuk keterangan seperti "Sudah termasuk jasa potong rapi" atau
+  "Belum termasuk pemasangan").
+- Setiap item juga punya field **Jenis: Barang / Jasa**. Katalog publik
+  **hanya menampilkan item berjenis "Barang"** — item "Jasa" otomatis
+  tersembunyi dari customer (tetap kelihatan & bisa dipakai normal di
+  Admin, termasuk untuk invoice & simulasi harga).
+- Kartu katalog (Admin maupun publik) sekarang menampilkan foto asli kalau
+  ada gambar yang di-upload; kalau belum ada gambar, tetap fallback ke
+  ikon seperti sebelumnya.
+
+Setelah update ini, jalankan ulang `supabase/schema.sql` (menambah kolom
+`image_url`, `item_type`, `description` ke tabel items). **Item yang sudah
+ada sebelumnya otomatis dianggap "Barang"** — kalau ada yang sebenarnya
+Jasa (misalnya item lama seperti "Desain"), tolong dicek & diedit jenisnya
+satu per satu di Katalog Admin.
+
 ### Update: Harga per Cabang + Pilih Lokasi
 
 Karena tiap titik Slawe (Setu, Mustikajaya, Cikarang) punya harga & nomor WA

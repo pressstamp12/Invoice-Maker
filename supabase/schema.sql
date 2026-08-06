@@ -46,10 +46,16 @@ create table if not exists items (
   unit          text default '',
   min_order     numeric default 1,
   terms         text default '',
+  image_url     text default '',
+  item_type     text default 'barang', -- barang | jasa
+  description   text default '',
   created_at    timestamptz not null default now()
 );
 alter table items add column if not exists min_order numeric default 1;
 alter table items add column if not exists terms text default '';
+alter table items add column if not exists image_url text default '';
+alter table items add column if not exists item_type text default 'barang';
+alter table items add column if not exists description text default '';
 
 -- ---------- ACCOUNTS (Akun Kas: Brankas / Pribadi / Bank) ----------
 create table if not exists accounts (

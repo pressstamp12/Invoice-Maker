@@ -89,7 +89,7 @@
   async function loadItems() {
     $('catalogWrap').innerHTML = '<p class="muted">Memuat katalog...</p>';
     const [itemsRes, pricesRes] = await Promise.all([
-      sb.from('items').select('*').order('item_name'),
+      sb.from('items').select('*').eq('item_type', 'barang').order('item_name'),
       sb.from('item_branch_prices').select('item_id, price').eq('company_id', activeBranch.companyId)
     ]);
     if (itemsRes.error) { $('catalogWrap').innerHTML = '<p class="muted">Gagal memuat katalog. Coba refresh halaman.</p>'; return; }
@@ -98,7 +98,7 @@
     items = (itemsRes.data || []).map(r => ({
       itemId: r.item_id, itemName: r.item_name, category: r.category,
       price: branchPrices[r.item_id] != null ? branchPrices[r.item_id] : r.default_price,
-      unit: r.unit, minOrder: r.min_order || 1, terms: r.terms || ''
+      unit: r.unit, minOrder: r.min_order || 1, terms: r.terms || '', imageUrl: r.image_url || '', description: r.description || ''
     }));
     renderCatalog();
   }
@@ -110,7 +110,7 @@
     if (!list.length) { wrap.innerHTML = '<p class="muted">' + (q ? 'Tidak ada item cocok.' : 'Katalog masih kosong.') + '</p>'; return; }
     wrap.innerHTML = list.map(it => `
       <div class="item-card" onclick="Store.openItem('${it.itemId}')">
-        <div class="ic-icon">${itemIcon(it.category)}</div>
+        ${it.imageUrl ? `<img src="${escapeHtml(it.imageUrl)}" class="ic-photo" alt="">` : `<div class="ic-icon">${itemIcon(it.category)}</div>`}
         <div class="ic-name">${escapeHtml(it.itemName)}</div>
         <div class="ic-cat">${escapeHtml(it.category || '-')}</div>
         <div class="ic-price">${formatMoney(it.price)}</div>
@@ -122,9 +122,14 @@
   function openItem(id) {
     const it = items.find(x => x.itemId === id); if (!it) return;
     _activeItemId = id;
+    const img = $('itemModalImg');
+    if (it.imageUrl) { img.src = it.imageUrl; img.classList.remove('hidden'); }
+    else { img.classList.add('hidden'); img.removeAttribute('src'); }
     $('itemModalName').textContent = it.itemName;
     $('itemModalCat').textContent = it.category || '';
     $('itemModalPrice').textContent = formatMoney(it.price) + ' / ' + (it.unit || 'satuan');
+    $('itemModalDesc').textContent = it.description || '';
+    $('itemModalDesc').classList.toggle('hidden', !it.description);
     $('itemModalTerms').textContent = it.terms || '';
     $('itemModalTerms').classList.toggle('hidden', !it.terms);
     $('itemQty').value = it.minOrder || 1;

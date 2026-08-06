@@ -344,7 +344,23 @@
               <div class="field"><label>Kategori</label><input type="text" id="itemCategory" placeholder="Contoh: Jasa / Produk"></div>
               <div class="field"><label>Harga Jual Default</label><input type="number" id="itemPrice" min="0" step="any" value="0"></div>
               <div class="field"><label>Satuan</label><input type="text" id="itemUnit" placeholder="pcs / jam / paket"></div>
+              <div class="field"><label>Jenis</label>
+                <select id="itemType">
+                  <option value="barang">Barang (tampil di katalog publik)</option>
+                  <option value="jasa">Jasa (internal saja, tidak tampil publik)</option>
+                </select>
+              </div>
               <div class="field"><label>Minimum Order</label><input type="number" id="itemMinOrder" min="1" step="any" value="1"></div>
+              <div class="field full">
+                <label>Gambar Produk (opsional)</label>
+                <div style="display:flex;gap:8px">
+                  <input type="text" id="itemImageUrl" placeholder="https://.../foto-produk.jpg" style="flex:1">
+                  <button type="button" id="itemImageUploadBtn" class="btn-secondary" style="white-space:nowrap">📤 Upload</button>
+                </div>
+                <input type="file" id="itemImageFile" accept="image/*" class="hidden">
+                <img id="itemImagePreview" class="hidden" style="max-width:110px;max-height:110px;border-radius:8px;margin-top:8px;object-fit:cover;border:1px solid var(--border)">
+              </div>
+              <div class="field full"><label>Deskripsi (opsional)</label><textarea id="itemDescription" rows="2" placeholder="mis. Sudah termasuk jasa potong rapi. Belum termasuk pemasangan."></textarea></div>
               <div class="field full"><label>Syarat & Ketentuan (opsional)</label><input type="text" id="itemTerms" placeholder="mis. DP 50%, waktu produksi 2 hari, dll"></div>
               <div class="field full">
                 <label>Harga per Cabang (opsional)</label>
