@@ -17,11 +17,11 @@
   <link rel="stylesheet" href="assets/style.css">
 
   <!-- Libraries -->
-  <script src="https://www.gstatic.com/charts/loader.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://www.gstatic.com/charts/loader.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 </head>
 <body>
 
@@ -60,14 +60,6 @@
     <main>
       <!-- TAB: DASHBOARD -->
       <section id="tab-dashboard" class="tab-content active">
-        <div class="card">
-          <h2>Mode Perhitungan Omzet & Profit</h2>
-          <div class="filter-pills" id="dashboardModeFilter">
-            <button class="filter-pill active" data-val="paid" onclick="setDashboardMode('paid')">✅ Hanya yang Lunas</button>
-            <button class="filter-pill" data-val="all" onclick="setDashboardMode('all')">📋 Semua Invoice</button>
-          </div>
-          <p class="hint" style="margin:8px 0 0">"Hanya Lunas" = omzet & profit dari uang yang sudah benar-benar diterima. "Semua Invoice" = termasuk yang masih Belum Lunas (nilai tagihan, uangnya belum tentu cair).</p>
-        </div>
         <div class="card">
           <h2>Filter Kasir</h2>
           <div id="cashierFilterPills" class="filter-pills"><span class="muted">Memuat...</span></div>
@@ -645,9 +637,9 @@
   <div id="toast" class="toast"></div>
   <div id="loadingOverlay" class="loading-overlay hidden"><div class="spinner"></div></div>
 
-  <script src="assets/supabase-config.js"></script>
-  <script src="assets/api.js"></script>
-  <script src="assets/invoice-template.js"></script>
-  <script src="assets/app.js"></script>
+  <script src="assets/supabase-config.js" defer></script>
+  <script src="assets/api.js" defer></script>
+  <script src="assets/invoice-template.js" defer></script>
+  <script src="assets/app.js" defer></script>
 </body>
 </html>

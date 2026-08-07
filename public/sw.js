@@ -1,4 +1,4 @@
-const CACHE_NAME = 'invoice-maker-v2';
+const CACHE_NAME = 'invoice-maker-v3';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -25,22 +25,24 @@ self.addEventListener('activate', event => {
   );
 });
 
-// STRATEGI: network-first untuk file app-shell lokal (HTML/CSS/JS).
-// Ini PENTING: memastikan pengguna SELALU dapat versi kode terbaru saat online
-// (mencegah bug "kode/tampilan lama nyangkut" akibat cache basi).
-// Kalau offline, baru fallback ke cache supaya app tetap bisa dibuka.
+// STRATEGI: stale-while-revalidate untuk file app-shell lokal (HTML/CSS/JS).
+// Kalau ada versi tersimpan di cache, LANGSUNG dipakai (instan, tidak nunggu jaringan
+// -> ini yang mencegah app "freeze"/lama saat sinyal lambat). Di saat bersamaan,
+// versi terbaru tetap diambil dari server di belakang layar untuk update cache,
+// dan auto-reload (lihat app.js) akan memuat versi baru itu di kunjungan berikutnya.
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   const isSameOrigin = url.origin === self.location.origin;
   if (!isSameOrigin || event.request.method !== 'GET') return;
 
   event.respondWith(
-    fetch(event.request)
-      .then(res => {
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+    caches.open(CACHE_NAME).then(async cache => {
+      const cached = await cache.match(event.request);
+      const networkFetch = fetch(event.request).then(res => {
+        cache.put(event.request, res.clone());
         return res;
-      })
-      .catch(() => caches.match(event.request))
+      }).catch(() => cached);
+      return cached || networkFetch;
+    })
   );
 });

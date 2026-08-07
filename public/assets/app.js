@@ -11,12 +11,7 @@ let itemsCache = [], companiesCache = [], cashiersCache = [], accountsCache = []
 let chartsLoaded = false;
 let currentPreviewInv = '';
 let dashboardFilterCashier = '';
-let dashboardOnlyPaid = true;
-function setDashboardMode(m) {
-  dashboardOnlyPaid = (m === 'paid');
-  document.querySelectorAll('#dashboardModeFilter button').forEach(b => b.classList.toggle('active', b.dataset.val === m));
-  loadDashboard();
-}
+const dashboardOnlyPaid = true; // Dashboard SELALU hitung omzet/profit dari invoice yang sudah Lunas saja
 let _lastDashboardData = null, _prodMetric = 'omzet', _companyMetric = 'omzet';
 let _importParsedRows = null;
 let hppAccounts = [], hppCurrentInv = '';
@@ -756,15 +751,34 @@ function downloadPdfFromPreview() {
     toast('PDF diunduh');
   });
 }
+let _lastFallbackUrl = null;
+function dataUriToBlob(dataUri) {
+  const parts = dataUri.split(',');
+  const mimeMatch = /data:([^;]+)/.exec(parts[0]);
+  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+  const bytes = atob(parts[1]);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
 function triggerDownload(href, name) {
   const a = document.createElement('a');
   a.href = href; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
 
-  // Cadangan: kalau notifikasi HP tidak muncul, tombol ini selalu ada untuk buka file-nya.
+  // Tombol cadangan "Buka file" pakai Blob URL (bukan data: URI langsung) —
+  // data URI panjang kadang gagal dibuka lagi di tab baru pada percobaan berikutnya
+  // di beberapa browser HP, Blob URL jauh lebih konsisten untuk dibuka berulang kali.
   const fbWrap = $('downloadFallbackWrap'), fb = $('downloadFallbackLink');
   if (fbWrap && fb) {
-    fb.href = href;
+    if (_lastFallbackUrl) { URL.revokeObjectURL(_lastFallbackUrl); _lastFallbackUrl = null; }
+    try {
+      const blobUrl = URL.createObjectURL(dataUriToBlob(href));
+      _lastFallbackUrl = blobUrl;
+      fb.href = blobUrl;
+    } catch (e) {
+      fb.href = href; // fallback kalau konversi gagal
+    }
     fb.textContent = '📄 Buka ' + name + ' (kalau tidak ada notifikasi)';
     fbWrap.classList.remove('hidden');
   }
