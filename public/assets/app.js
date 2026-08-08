@@ -476,6 +476,7 @@ function loadInvoiceList() {
   const wrap = $('invoiceListWrap');
   wrap.innerHTML = '<p class="muted">Memuat...</p>';
   bindListFilterHandlers();
+  if (listFilterStatus === 'trash') { loadTrashList(); return; }
   run('getInvoiceList', [], list => {
     _allInvoices = list || [];
     populateListCashierFilter();
@@ -483,8 +484,42 @@ function loadInvoiceList() {
     renderInvoiceList();
   }, { loading: false, onErr: err => { wrap.innerHTML = '<p class="muted">Gagal memuat.</p>'; toast(err.message, true); } });
 }
+function loadTrashList() {
+  const wrap = $('invoiceListWrap');
+  wrap.innerHTML = '<p class="muted">Memuat...</p>';
+  run('getDeletedInvoices', [], list => renderTrashList(list || []), { loading: false });
+}
+function renderTrashList(list) {
+  const wrap = $('invoiceListWrap');
+  if (!list.length) { wrap.innerHTML = '<p class="muted">Sampah kosong — belum ada invoice yang dihapus.</p>'; return; }
+  wrap.innerHTML = list.map(inv => `
+    <div class="inv-card">
+      <div class="inv-card-top">
+        <div><div class="inv-no">${escapeHtml(inv.invoiceNumber)}</div>
+        <div class="inv-date">${escapeHtml(inv.invoiceDate)}</div></div>
+        <span class="status-badge Unpaid" style="cursor:default">🗑️ Dihapus</span>
+      </div>
+      <div class="inv-card-body">
+        <div><span class="lbl">Klien</span><span class="val">${escapeHtml(inv.clientName)}</span></div>
+        <div><span class="lbl">Total</span><span class="val">${formatMoney(inv.total)}</span></div>
+        <div><span class="lbl">Perusahaan</span><span class="val">${escapeHtml(inv.companyName || '-')}</span></div>
+        <div><span class="lbl">Dihapus pada</span><span class="val">${inv.deletedAt ? new Date(inv.deletedAt).toLocaleString('id-ID') : '-'}</span></div>
+      </div>
+      <div class="inv-actions">
+        <button onclick="restoreInvoiceUi('${inv.invoiceNumber}')">♻️ Pulihkan</button>
+        <button class="del-btn" onclick="permanentDeleteUi('${inv.invoiceNumber}')">🗑️ Hapus Permanen</button>
+      </div>
+    </div>`).join('');
+}
+function restoreInvoiceUi(inv) {
+  run('restoreInvoice', [inv], () => { toast('Invoice ' + inv + ' dipulihkan'); loadTrashList(); });
+}
+function permanentDeleteUi(inv) {
+  if (!confirm('Hapus PERMANEN invoice ' + inv + '? Ini TIDAK BISA dibatalkan, termasuk riwayat HPP terkait.')) return;
+  run('permanentlyDeleteInvoice', [inv], () => { toast('Invoice dihapus permanen'); loadTrashList(); });
+}
 function bindListFilterHandlers() {
-  bindPillGroup('filterStatus', v => { listFilterStatus = v; renderInvoiceList(); });
+  bindPillGroup('filterStatus', v => { listFilterStatus = v; loadInvoiceList(); });
   bindPillGroup('filterSource', v => { listFilterSource = v; renderInvoiceList(); });
   const fc = $('filterCashierList');
   if (fc && !fc.dataset.bound) {
@@ -583,8 +618,8 @@ function toggleStatus(inv, current) {
   }
 }
 function deleteInvoiceUi(inv) {
-  if (!confirm('Hapus invoice ' + inv + '?')) return;
-  run('deleteInvoice', [inv], () => { toast('Invoice dihapus'); loadInvoiceList(); });
+  if (!confirm('Pindahkan invoice ' + inv + ' ke Sampah? Bisa dipulihkan lagi nanti dari tab "🗑️ Dihapus".')) return;
+  run('deleteInvoice', [inv], () => { toast('Invoice dipindahkan ke Sampah'); loadInvoiceList(); });
 }
 function editInvoice(inv) {
   run('getInvoiceByNumber', [inv], d => {

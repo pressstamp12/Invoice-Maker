@@ -219,6 +219,7 @@
   async function getInvoiceList() {
     const [invRows, purchases, cashiers, companies] = await Promise.all([
       sb.from('invoices').select('invoice_number, invoice_date, client_name, total, status, subtotal, discount, company_id, cashier_id, created_at')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false }).then(ok),
       sb.from('purchases').select('invoice_number,total_cost').then(ok),
       getCashiers(), getCompanies()
@@ -243,6 +244,24 @@
     });
   }
 
+  async function getDeletedInvoices() {
+    const [invRows, companies] = await Promise.all([
+      sb.from('invoices').select('invoice_number, invoice_date, client_name, total, status, company_id, deleted_at')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }).then(ok),
+      getCompanies()
+    ]);
+    return invRows.map(row => {
+      const company = companies.find(c => c.companyId === row.company_id);
+      return {
+        invoiceNumber: row.invoice_number, invoiceDate: fmtDate(row.invoice_date),
+        clientName: row.client_name, total: row.total, status: row.status,
+        companyId: row.company_id || '', companyName: company ? company.name : '',
+        deletedAt: row.deleted_at
+      };
+    });
+  }
+
   async function getInvoiceByNumber(invNo) {
     const { data, error } = await sb.from('invoices').select('*').eq('invoice_number', invNo).maybeSingle();
     if (error || !data) throw new Error('Invoice tidak ditemukan: ' + invNo);
@@ -255,10 +274,21 @@
     };
   }
 
+  // Pindahkan ke Sampah (soft-delete) — invoice, HPP, dan riwayat kas tetap utuh, bisa dipulihkan.
   async function deleteInvoice(invNo) {
+    const { error } = await sb.from('invoices').update({ deleted_at: nowIso() }).eq('invoice_number', invNo);
+    if (error) throw new Error('Invoice tidak ditemukan.');
+    return { success: true };
+  }
+  async function restoreInvoice(invNo) {
+    const { error } = await sb.from('invoices').update({ deleted_at: null }).eq('invoice_number', invNo);
+    if (error) throw new Error('Invoice tidak ditemukan.');
+    return { success: true };
+  }
+  // Hapus permanen dari Sampah — tidak bisa dibatalkan, HPP & riwayat kas terkait ikut terhapus.
+  async function permanentlyDeleteInvoice(invNo) {
     const { error } = await sb.from('invoices').delete().eq('invoice_number', invNo);
     if (error) throw new Error('Invoice tidak ditemukan.');
-    // purchases dihapus otomatis via ON DELETE CASCADE
     await deleteHppCashFlows(invNo);
     return { success: true };
   }
@@ -587,7 +617,7 @@
   }
 
   async function getInvoiceNumbers() {
-    const data = ok(await sb.from('invoices').select('invoice_number, client_name').order('invoice_number', { ascending: false }));
+    const data = ok(await sb.from('invoices').select('invoice_number, client_name').is('deleted_at', null).order('invoice_number', { ascending: false }));
     return data.map(r => ({ invoiceNumber: r.invoice_number, clientName: r.client_name }));
   }
 
@@ -595,7 +625,7 @@
   async function getDashboardData(filterCashierId, onlyPaid) {
     const filter = filterCashierId || '';
     const [invRows, purchases, cashiersList, companiesList] = await Promise.all([
-      sb.from('invoices').select('invoice_number, invoice_date, discount, subtotal, total, status, company_id, cashier_id, items_json').then(ok),
+      sb.from('invoices').select('invoice_number, invoice_date, discount, subtotal, total, status, company_id, cashier_id, items_json').is('deleted_at', null).then(ok),
       sb.from('purchases').select('invoice_number,total_cost').then(ok),
       getCashiers(), getCompanies()
     ]);
@@ -861,6 +891,7 @@
     getSettings, saveGlobalSettings,
     getItems, saveItem, deleteItem, getCustomers, uploadImage, getItemBranchPrices, saveItemBranchPrices,
     saveInvoice, getInvoiceList, getInvoiceByNumber, deleteInvoice, updateInvoiceStatus, getInvoiceNumbers,
+    getDeletedInvoices, restoreInvoice, permanentlyDeleteInvoice,
     getInvoicePreviewHtml, generateInvoicePdf, generateInvoiceJpg, savePdfToDrive, saveJpgToDrive,
     getPurchasesByInvoice, savePurchases, getHppModalData,
     importExcelRows, getImportPreviewInfo,

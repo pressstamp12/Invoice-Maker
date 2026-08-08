@@ -87,8 +87,11 @@ create table if not exists invoices (
   status         text default 'Unpaid', -- Paid | Unpaid
   company_id     text references companies(company_id) on delete set null,
   cashier_id     text references cashiers(cashier_id) on delete set null,
+  deleted_at     timestamptz, -- diisi kalau invoice dipindah ke Sampah (soft-delete)
   created_at     timestamptz not null default now()
 );
+alter table invoices add column if not exists deleted_at timestamptz;
+create index if not exists idx_invoices_deleted_at on invoices(deleted_at);
 create index if not exists idx_invoices_status on invoices(status);
 create index if not exists idx_invoices_company on invoices(company_id);
 create index if not exists idx_invoices_cashier on invoices(cashier_id);
