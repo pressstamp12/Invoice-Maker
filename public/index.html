@@ -51,6 +51,7 @@
         <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
         <button class="tab-btn" data-tab="create">Buat Invoice</button>
         <button class="tab-btn" data-tab="list">Daftar Invoice</button>
+        <button class="tab-btn" data-tab="quotation">Penawaran</button>
         <button class="tab-btn" data-tab="cash">Kas</button>
         <button class="tab-btn" data-tab="items">Katalog</button>
         <button class="tab-btn" data-tab="settings">Pengaturan</button>
@@ -225,6 +226,96 @@
           <div id="invoiceListWrap" class="invoice-cards">
             <p class="muted">Memuat...</p>
           </div>
+        </div>
+      </section>
+
+      <!-- TAB: PENAWARAN HARGA -->
+      <section id="tab-quotation" class="tab-content">
+        <div class="card">
+          <div class="catalog-header">
+            <h2 style="margin:0">📋 Penawaran Harga</h2>
+            <button type="button" id="quoAddToggleBtn" class="btn-secondary">+ Buat Penawaran</button>
+          </div>
+        </div>
+
+        <div class="card hidden" id="quoFormCard">
+          <h2 id="quoFormTitle">Buat Penawaran Baru</h2>
+          <form id="quoForm">
+            <input type="hidden" id="editQuotationNumber" value="">
+            <div class="grid-2">
+              <div class="field">
+                <label>Perusahaan (Kop) *</label>
+                <select id="quoCompany" required></select>
+              </div>
+              <div class="field">
+                <label>Dipersiapkan oleh</label>
+                <select id="quoCashier"><option value="">— Tidak ada —</option></select>
+              </div>
+            </div>
+
+            <h3 class="subhead">Info Klien</h3>
+            <div class="grid-2">
+              <div class="field"><label>Nama Klien *</label><input type="text" id="quoClientName" list="clientDatalist" required></div>
+              <div class="field"><label>Email Klien</label><input type="email" id="quoClientEmail"></div>
+              <div class="field"><label>Telepon Klien</label><input type="text" id="quoClientPhone"></div>
+              <div class="field"><label>Alamat Klien</label><input type="text" id="quoClientAddress"></div>
+            </div>
+
+            <h3 class="subhead">Info Penawaran</h3>
+            <div class="grid-2">
+              <div class="field"><label>Tanggal Penawaran</label><input type="date" id="quoDate"></div>
+              <div class="field"><label>Berlaku Hingga</label><input type="date" id="quoValidUntil"></div>
+            </div>
+
+            <h3 class="subhead">Item</h3>
+            <table class="items-table" id="quoItemsTable">
+              <thead>
+                <tr><th>Deskripsi</th><th style="width:70px">Qty</th><th style="width:90px">Satuan</th><th style="width:130px">Harga</th><th style="width:130px">Subtotal</th><th style="width:36px"></th></tr>
+              </thead>
+              <tbody id="quoItemsBody"></tbody>
+            </table>
+            <button type="button" id="quoAddItemBtn" class="btn-secondary">+ Tambah Item</button>
+
+            <h3 class="subhead">Ringkasan</h3>
+            <div class="grid-2">
+              <div class="field"><label>Diskon (nominal)</label><input type="number" id="quoDiscount" value="0" min="0" step="any"></div>
+              <div class="field"><label>Pajak (%)</label><input type="number" id="quoTaxPercent" value="0" min="0" step="any"></div>
+            </div>
+            <div class="field full">
+              <label>Lampiran Gambar (opsional)</label>
+              <p class="hint" style="margin:-2px 0 8px">Mockup desain, referensi produk, dll. Bisa lebih dari satu, akan ikut tampil di PDF penawaran.</p>
+              <button type="button" id="quoAttachUploadBtn" class="btn-secondary">📤 Tambah Gambar</button>
+              <input type="file" id="quoAttachFile" accept="image/*" multiple class="hidden">
+              <div id="quoAttachPreviewWrap" class="attach-preview-wrap"></div>
+            </div>
+            <div class="field"><label>Catatan</label><textarea id="quoNotes" rows="2" placeholder="Contoh: Harga sudah termasuk PPN"></textarea></div>
+            <div class="summary-box">
+              <div><span>Subtotal</span><strong id="quoSumSubtotal">0</strong></div>
+              <div><span>Diskon</span><strong id="quoSumDiscount">0</strong></div>
+              <div><span>Pajak</span><strong id="quoSumTax">0</strong></div>
+              <div class="total-row"><span>Total</span><strong id="quoSumTotal">0</strong></div>
+            </div>
+
+            <div class="actions">
+              <button type="submit" class="btn-primary">💾 Simpan Penawaran</button>
+              <button type="button" id="quoCancelBtn" class="btn-secondary">Batal</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="list-filters">
+            <div class="lf-group">
+              <span class="lf-label">Status</span>
+              <div class="lf-pills" id="quoFilterStatus">
+                <button class="lf-pill active" data-val="all">Semua</button>
+                <button class="lf-pill" data-val="Menunggu">Menunggu</button>
+                <button class="lf-pill" data-val="Diterima">Diterima</button>
+                <button class="lf-pill" data-val="Ditolak">Ditolak</button>
+              </div>
+            </div>
+          </div>
+          <div id="quotationListWrap" class="invoice-cards"><p class="muted">Memuat...</p></div>
         </div>
       </section>
 
@@ -544,6 +635,31 @@
     </div>
   </div>
 
+  <!-- MODAL: PREVIEW PENAWARAN -->
+  <div id="quoPreviewModalOverlay" class="modal-overlay hidden">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2>Preview Penawaran — <span id="quoPreviewNumber"></span></h2>
+        <button type="button" id="quoPreviewCloseBtn" class="modal-close">&times;</button>
+      </div>
+      <div id="quoPreviewFrameWrap" class="preview-wrap"><p class="muted">Memuat preview...</p></div>
+      <div class="actions preview-actions">
+        <button type="button" id="quoBtnDownloadPdf" class="btn-primary">⬇️ Download PDF</button>
+        <button type="button" id="quoBtnDownloadJpg" class="btn-secondary">🖼️ Download JPG</button>
+        <button type="button" id="quoBtnShareDrive" class="btn-secondary">🔗 Link PDF</button>
+        <button type="button" id="quoBtnShareJpgDrive" class="btn-secondary">🔗 Link JPG</button>
+        <button type="button" id="quoBtnShareWa" class="btn-secondary hidden">📲 Kirim WhatsApp</button>
+      </div>
+      <div id="quoDownloadFallbackWrap" class="hidden" style="margin-top:8px">
+        <a id="quoDownloadFallbackLink" href="#" target="_blank" rel="noopener" class="btn-secondary" style="display:block;text-decoration:none;text-align:center;padding:10px 18px;border-radius:8px;">📄 Buka file</a>
+      </div>
+      <div id="quoShareLinkBox" class="share-link hidden">
+        <input type="text" id="quoShareLinkInput" readonly>
+        <button type="button" id="quoBtnCopyLink" class="btn-secondary">Salin</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: CATAT KAS -->
   <div id="cashModalOverlay" class="modal-overlay hidden">
     <div class="modal-box">
@@ -641,6 +757,7 @@
   <script src="assets/supabase-config.js" defer></script>
   <script src="assets/api.js" defer></script>
   <script src="assets/invoice-template.js" defer></script>
+  <script src="assets/quotation-template.js" defer></script>
   <script src="assets/app.js" defer></script>
 </body>
 </html>

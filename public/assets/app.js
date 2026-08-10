@@ -133,6 +133,7 @@ function initApp() {
   $('itemImageUrl').addEventListener('input', updateItemImagePreview);
   initSimUI();
   initCatalogUI();
+  initQuoUI();
 
   loadGoogleCharts();
 }
@@ -163,6 +164,7 @@ function loadGoogleCharts() {
 /* ---------------- TABS ---------------- */
 function initTabs() {
   const map = { list: loadInvoiceList, items: loadItemsList, create: () => { loadItemsCache(); loadCustomersCache(); },
+    quotation: () => { loadCustomersCache(); loadQuotationList(); },
     dashboard: loadDashboard, cash: loadCashTab,
     settings: () => { loadCompanyList(); loadCashierList(); initImportUI(); } };
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -462,6 +464,10 @@ function onSubmitInvoice(e) {
     toast('Invoice ' + res.invoiceNumber + ' tersimpan'); resetForm();
     loadCustomersCache();
     cashInvoiceOptionsLoaded = false;
+    if (window._pendingQuoConvert) {
+      const qNo = window._pendingQuoConvert; window._pendingQuoConvert = null;
+      run('markQuotationConverted', [qNo, res.invoiceNumber], () => {}, { loading: false });
+    }
     document.querySelector('.tab-btn[data-tab="list"]').click();
   }, { lockKey: 'saveInvoice:' + (data.invoiceNumber || 'new') });
 }
@@ -637,6 +643,316 @@ function editInvoice(inv) {
     recalcTotals();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+}
+
+/* ---------------- PENAWARAN HARGA (Quotation) ---------------- */
+let quoItemCounter = 0;
+let quoFilterStatus = 'all';
+let quoAttachments = []; // [{url, caption}] untuk form penawaran yang sedang dibuka
+let _allQuotations = [];
+let currentPreviewQuo = '';
+
+function initQuoUI() {
+  const addBtn = $('quoAddToggleBtn');
+  if (addBtn && !addBtn.dataset.bound) {
+    addBtn.dataset.bound = '1';
+    addBtn.addEventListener('click', () => {
+      const card = $('quoFormCard');
+      if (card.classList.contains('hidden')) { resetQuoForm(false); card.classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      else closeQuoFormCard();
+    });
+  }
+  $('quoAddItemBtn').addEventListener('click', () => addQuoItemRow());
+  $('quoForm').addEventListener('submit', onSubmitQuotation);
+  $('quoCancelBtn').addEventListener('click', closeQuoFormCard);
+  $('quoDiscount').addEventListener('input', recalcQuoTotals);
+  $('quoTaxPercent').addEventListener('input', recalcQuoTotals);
+  $('quoClientName').addEventListener('change', onQuoClientNameChange);
+  bindPillGroup('quoFilterStatus', v => { quoFilterStatus = v; renderQuotationList(); });
+
+  $('quoPreviewCloseBtn').addEventListener('click', closeQuoPreviewModal);
+  $('quoBtnDownloadPdf').addEventListener('click', downloadQuoPdfFromPreview);
+  $('quoBtnDownloadJpg').addEventListener('click', downloadQuoJpgFromPreview);
+  $('quoBtnShareDrive').addEventListener('click', shareQuoDriveFromPreview);
+  $('quoBtnShareJpgDrive').addEventListener('click', shareQuoJpgDriveFromPreview);
+  $('quoBtnShareWa').addEventListener('click', shareQuoWhatsApp);
+  $('quoBtnCopyLink').addEventListener('click', copyQuoShareLink);
+
+  const attachBtn = $('quoAttachUploadBtn'), attachFile = $('quoAttachFile');
+  attachBtn.addEventListener('click', () => attachFile.click());
+  attachFile.addEventListener('change', () => {
+    const files = Array.from(attachFile.files || []);
+    if (!files.length) return;
+    uploadQuoAttachments(files);
+    attachFile.value = '';
+  });
+}
+function uploadQuoAttachments(files) {
+  if (!files.length) return;
+  const file = files[0];
+  const rest = files.slice(1);
+  run('uploadImage', [file, 'quotation-attachments'], res => {
+    quoAttachments.push({ url: res.url, caption: '' });
+    renderQuoAttachPreview();
+    if (rest.length) uploadQuoAttachments(rest);
+    else toast('Gambar ditambahkan');
+  }, { onErr: err => { toast('Gagal upload: ' + err.message, true); if (rest.length) uploadQuoAttachments(rest); } });
+}
+function renderQuoAttachPreview() {
+  const wrap = $('quoAttachPreviewWrap');
+  wrap.innerHTML = quoAttachments.map((a, i) => `
+    <div class="attach-thumb">
+      <img src="${escapeHtml(a.url)}" alt="">
+      <button type="button" class="attach-remove" onclick="removeQuoAttachment(${i})" title="Hapus">&times;</button>
+    </div>`).join('');
+}
+function removeQuoAttachment(i) {
+  quoAttachments.splice(i, 1);
+  renderQuoAttachPreview();
+}
+
+function closeQuoFormCard() { $('quoFormCard').classList.add('hidden'); resetQuoForm(true); }
+function resetQuoForm(alsoResetFields) {
+  if (alsoResetFields !== false) { $('quoForm').reset(); }
+  setVal('editQuotationNumber', '');
+  setTxt('quoFormTitle', 'Buat Penawaran Baru');
+  setVal('quoDate', todayStr());
+  $('quoItemsBody').innerHTML = ''; quoItemCounter = 0; addQuoItemRow();
+  recalcQuoTotals();
+  fillSelect('quoCompany', companiesCache, 'companyId', 'name', '<option value="">(Belum ada perusahaan)</option>');
+  fillSelect('quoCashier', cashiersCache, 'cashierId', 'name', '', '<option value="">— Tidak ada —</option>');
+  quoAttachments = [];
+  renderQuoAttachPreview();
+}
+function addQuoItemRow(item) {
+  quoItemCounter++;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="qitem-desc" list="itemsDatalist" placeholder="Nama produk/jasa" value="${item ? escapeHtml(item.desc) : ''}"></td>
+    <td><input type="number" class="qitem-qty" min="0" step="any" value="${item ? item.qty : 1}"></td>
+    <td><input type="text" class="qitem-unit" placeholder="pcs" value="${item && item.unit ? escapeHtml(item.unit) : ''}"></td>
+    <td><input type="number" class="qitem-price" min="0" step="any" value="${item ? item.price : 0}"></td>
+    <td class="qitem-subtotal">${formatMoney(0)}</td>
+    <td><button type="button" class="remove-item-btn">&times;</button></td>`;
+  $('quoItemsBody').appendChild(tr);
+  tr.querySelector('.qitem-desc').addEventListener('change', () => {
+    const desc = tr.querySelector('.qitem-desc').value.trim();
+    const match = itemsCache.find(it => it.itemName.toLowerCase() === desc.toLowerCase());
+    if (match) {
+      tr.querySelector('.qitem-price').value = match.defaultPrice;
+      const unitInput = tr.querySelector('.qitem-unit');
+      if (!unitInput.value.trim() && match.unit) unitInput.value = match.unit;
+      recalcQuoRow(tr);
+    }
+  });
+  tr.querySelector('.qitem-qty').addEventListener('input', () => recalcQuoRow(tr));
+  tr.querySelector('.qitem-price').addEventListener('input', () => recalcQuoRow(tr));
+  tr.querySelector('.remove-item-btn').addEventListener('click', () => { tr.remove(); recalcQuoTotals(); });
+  recalcQuoRow(tr);
+}
+function recalcQuoRow(tr) {
+  const qty = parseFloat(tr.querySelector('.qitem-qty').value) || 0;
+  const price = parseFloat(tr.querySelector('.qitem-price').value) || 0;
+  tr.querySelector('.qitem-subtotal').textContent = formatMoney(qty * price);
+  recalcQuoTotals();
+}
+function recalcQuoTotals() {
+  let subtotal = 0;
+  document.querySelectorAll('#quoItemsBody tr').forEach(tr => {
+    subtotal += (parseFloat(tr.querySelector('.qitem-qty').value) || 0) * (parseFloat(tr.querySelector('.qitem-price').value) || 0);
+  });
+  const discount = parseFloat(val('quoDiscount')) || 0;
+  const taxPercent = parseFloat(val('quoTaxPercent')) || 0;
+  const taxable = Math.max(subtotal - discount, 0);
+  const taxAmount = taxable * (taxPercent / 100);
+  setTxt('quoSumSubtotal', formatMoney(subtotal));
+  setTxt('quoSumDiscount', formatMoney(discount));
+  setTxt('quoSumTax', formatMoney(taxAmount));
+  setTxt('quoSumTotal', formatMoney(taxable + taxAmount));
+}
+function onQuoClientNameChange() {
+  const name = val('quoClientName').trim();
+  const match = customersCache.find(c => c.name.toLowerCase() === name.toLowerCase());
+  if (match) {
+    if (!val('quoClientPhone').trim()) setVal('quoClientPhone', match.phone || '');
+    if (!val('quoClientEmail').trim()) setVal('quoClientEmail', match.email || '');
+    if (!val('quoClientAddress').trim()) setVal('quoClientAddress', match.address || '');
+  }
+}
+function onSubmitQuotation(e) {
+  e.preventDefault();
+  const items = [];
+  document.querySelectorAll('#quoItemsBody tr').forEach(tr => {
+    const desc = tr.querySelector('.qitem-desc').value.trim();
+    const qty = parseFloat(tr.querySelector('.qitem-qty').value) || 0;
+    const unit = tr.querySelector('.qitem-unit').value.trim();
+    const price = parseFloat(tr.querySelector('.qitem-price').value) || 0;
+    if (desc) items.push({ desc, qty, unit, price });
+  });
+  if (!items.length) { toast('Tambahkan minimal 1 item', true); return; }
+  const companyId = val('quoCompany');
+  if (!companyId) { toast('Pilih perusahaan (kop) dulu.', true); return; }
+  const data = {
+    quotationNumber: val('editQuotationNumber'), companyId, cashierId: val('quoCashier'),
+    clientName: val('quoClientName'), clientEmail: val('quoClientEmail'), clientPhone: val('quoClientPhone'),
+    clientAddress: val('quoClientAddress'), quotationDate: val('quoDate'), validUntil: val('quoValidUntil'),
+    items, discount: parseFloat(val('quoDiscount')) || 0, taxPercent: parseFloat(val('quoTaxPercent')) || 0, notes: val('quoNotes'),
+    attachments: quoAttachments
+  };
+  run('saveQuotation', [data], res => {
+    toast('Penawaran ' + res.quotationNumber + ' tersimpan');
+    closeQuoFormCard();
+    loadQuotationList();
+  }, { lockKey: 'saveQuotation:' + (data.quotationNumber || 'new') });
+}
+
+function loadQuotationList() {
+  const wrap = $('quotationListWrap');
+  wrap.innerHTML = '<p class="muted">Memuat...</p>';
+  run('getQuotationList', [], list => { _allQuotations = list || []; renderQuotationList(); },
+    { loading: false, onErr: err => { wrap.innerHTML = '<p class="muted">Gagal memuat.</p>'; toast(err.message, true); } });
+}
+function renderQuotationList() {
+  const wrap = $('quotationListWrap');
+  let list = _allQuotations.slice();
+  if (quoFilterStatus !== 'all') list = list.filter(q => q.status === quoFilterStatus);
+  if (!list.length) { wrap.innerHTML = '<p class="muted">Tidak ada penawaran sesuai filter.</p>'; return; }
+  const statusClass = { 'Diterima': 'Paid', 'Ditolak': 'Unpaid', 'Menunggu': 'Unpaid' };
+  wrap.innerHTML = list.map(q => `
+    <div class="inv-card">
+      <div class="inv-card-top">
+        <div><div class="inv-no">${escapeHtml(q.quotationNumber)}</div>
+        <div class="inv-date">${escapeHtml(q.quotationDate)}${q.validUntil ? ' · berlaku s.d ' + escapeHtml(q.validUntil) : ''}</div></div>
+        <button class="status-badge ${statusClass[q.status] || 'Unpaid'}" onclick="cycleQuoStatus('${q.quotationNumber}','${q.status}')">${escapeHtml(q.status)}</button>
+      </div>
+      <div class="inv-card-body">
+        <div><span class="lbl">Klien</span><span class="val">${escapeHtml(q.clientName)}</span></div>
+        <div><span class="lbl">Total</span><span class="val">${formatMoney(q.total)}</span></div>
+        <div><span class="lbl">Perusahaan</span><span class="val">${escapeHtml(q.companyName || '-')}</span></div>
+        <div><span class="lbl">Jadi Invoice</span><span class="val">${q.convertedInvoiceNumber ? escapeHtml(q.convertedInvoiceNumber) : '-'}</span></div>
+      </div>
+      <div class="inv-actions">
+        <button class="prev-btn" onclick="openQuoPreview('${q.quotationNumber}')">👁️ Preview/Share</button>
+        ${!q.convertedInvoiceNumber ? `<button onclick="convertQuoToInvoice('${q.quotationNumber}')">🧾 Jadikan Invoice</button>` : ''}
+        <button onclick="editQuotation('${q.quotationNumber}')">✏️ Edit</button>
+        <button class="del-btn" onclick="deleteQuotationUi('${q.quotationNumber}')">🗑️ Hapus</button>
+      </div>
+    </div>`).join('');
+}
+function cycleQuoStatus(qNo, current) {
+  const order = ['Menunggu', 'Diterima', 'Ditolak'];
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  run('updateQuotationStatus', [qNo, next], () => loadQuotationList(), { lockKey: 'quoStatus:' + qNo });
+}
+function editQuotation(qNo) {
+  run('getQuotationByNumber', [qNo], d => {
+    document.querySelector('.tab-btn[data-tab="quotation"]').click();
+    $('quoFormCard').classList.remove('hidden');
+    setVal('editQuotationNumber', d.quotationNumber);
+    setVal('quoCompany', d.companyId || ''); setVal('quoCashier', d.cashierId || '');
+    setVal('quoClientName', d.clientName || ''); setVal('quoClientEmail', d.clientEmail || '');
+    setVal('quoClientPhone', d.clientPhone || ''); setVal('quoClientAddress', d.clientAddress || '');
+    setVal('quoDate', d.quotationDate || todayStr()); setVal('quoValidUntil', d.validUntil || '');
+    setVal('quoDiscount', d.discount || 0); setVal('quoTaxPercent', d.taxPercent || 0); setVal('quoNotes', d.notes || '');
+    setTxt('quoFormTitle', 'Edit Penawaran');
+    $('quoItemsBody').innerHTML = ''; quoItemCounter = 0;
+    (d.items || []).forEach(it => addQuoItemRow(it));
+    if (!d.items || !d.items.length) addQuoItemRow();
+    recalcQuoTotals();
+    quoAttachments = (d.attachments || []).map(a => typeof a === 'string' ? { url: a, caption: '' } : a);
+    renderQuoAttachPreview();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+function deleteQuotationUi(qNo) {
+  if (!confirm('Hapus penawaran ' + qNo + '? Tidak bisa dibatalkan.')) return;
+  run('deleteQuotation', [qNo], () => { toast('Penawaran dihapus'); loadQuotationList(); });
+}
+function convertQuoToInvoice(qNo) {
+  if (!confirm('Jadikan penawaran ' + qNo + ' sebagai Invoice? Data akan disalin ke form Buat Invoice.')) return;
+  run('getQuotationByNumber', [qNo], d => {
+    document.querySelector('.tab-btn[data-tab="create"]').click();
+    setVal('editInvoiceNumber', '');
+    setVal('invoiceCompany', d.companyId || ''); setVal('invoiceCashier', d.cashierId || '');
+    setVal('clientName', d.clientName || ''); setVal('clientEmail', d.clientEmail || '');
+    setVal('clientPhone', d.clientPhone || ''); setVal('clientAddress', d.clientAddress || '');
+    setVal('invoiceDate', todayStr()); setVal('dueDate', '');
+    setVal('discount', d.discount || 0); setVal('taxPercent', d.taxPercent || 0);
+    setVal('notes', 'Dari Penawaran ' + d.quotationNumber + (d.notes ? ' — ' + d.notes : ''));
+    $('itemsBody').innerHTML = ''; itemCounter = 0;
+    (d.items || []).forEach(it => addItemRow(it));
+    recalcTotals();
+    window._pendingQuoConvert = qNo;
+    toast('Data penawaran dipindah ke form invoice — lengkapi & simpan');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+/* ---- Preview & share Penawaran (mirror dari preview invoice) ---- */
+function openQuoPreview(qNo) {
+  currentPreviewQuo = qNo;
+  setTxt('quoPreviewNumber', qNo);
+  $('quoShareLinkBox').classList.add('hidden');
+  $('quoBtnShareWa').classList.add('hidden');
+  const fbWrap = $('quoDownloadFallbackWrap');
+  if (fbWrap) fbWrap.classList.add('hidden');
+  const wrap = $('quoPreviewFrameWrap');
+  wrap.innerHTML = '<p class="muted">Memuat preview...</p>';
+  $('quoPreviewModalOverlay').classList.remove('hidden');
+  run('getQuotationPreviewHtml', [qNo], html => {
+    const iframe = document.createElement('iframe');
+    wrap.innerHTML = ''; wrap.appendChild(iframe);
+    iframe.contentDocument.open(); iframe.contentDocument.write(html); iframe.contentDocument.close();
+    setTimeout(() => fitPreviewIframe(iframe), 60);
+  }, { onErr: err => { wrap.innerHTML = '<p class="muted">Gagal memuat.</p>'; toast(err.message, true); } });
+}
+function closeQuoPreviewModal() { $('quoPreviewModalOverlay').classList.add('hidden'); }
+function triggerQuoDownload(href, name) {
+  const a = document.createElement('a');
+  a.href = href; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  const fbWrap = $('quoDownloadFallbackWrap'), fb = $('quoDownloadFallbackLink');
+  if (fbWrap && fb) {
+    fb.href = href;
+    fb.textContent = '📄 Buka ' + name + ' (kalau tidak ada notifikasi)';
+    fbWrap.classList.remove('hidden');
+  }
+}
+function downloadQuoPdfFromPreview() {
+  run('generateQuotationPdf', [currentPreviewQuo], res => {
+    triggerQuoDownload('data:application/pdf;base64,' + res.base64, res.filename);
+    toast('PDF diunduh');
+  }, { onErr: err => toast('Gagal membuat PDF: ' + err.message, true) });
+}
+function downloadQuoJpgFromPreview() {
+  run('generateQuotationJpg', [currentPreviewQuo], res => {
+    triggerQuoDownload(res.dataUrl, res.filename);
+    toast('JPG diunduh');
+  }, { onErr: err => toast('Gagal membuat JPG: ' + err.message, true) });
+}
+function showQuoShareLink(url, msg) {
+  setVal('quoShareLinkInput', url);
+  $('quoShareLinkBox').classList.remove('hidden');
+  $('quoBtnShareWa').classList.remove('hidden');
+  window._quoShareUrl = url;
+  toast(msg);
+}
+function shareQuoDriveFromPreview() {
+  run('saveQuotationPdfToDrive', [currentPreviewQuo], res => showQuoShareLink(res.url, 'Link PDF siap dibagikan'),
+    { onErr: err => toast('Gagal membuat PDF: ' + err.message, true) });
+}
+function shareQuoJpgDriveFromPreview() {
+  run('saveQuotationJpgToDrive', [currentPreviewQuo], res => showQuoShareLink(res.url, 'Link JPG siap dibagikan'),
+    { onErr: err => toast('Gagal membuat JPG: ' + err.message, true) });
+}
+function shareQuoWhatsApp() {
+  const msg = encodeURIComponent('Halo, berikut penawaran harga ' + currentPreviewQuo + ':\n' + (window._quoShareUrl || ''));
+  window.open('https://wa.me/?text=' + msg, '_blank');
+}
+function copyQuoShareLink() {
+  const input = $('quoShareLinkInput');
+  input.select(); input.setSelectionRange(0, 99999);
+  try { document.execCommand('copy'); toast('Link disalin'); } catch (e) { toast('Salin manual', true); }
 }
 
 /* ---------------- HPP MODAL ---------------- */

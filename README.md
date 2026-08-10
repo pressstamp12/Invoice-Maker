@@ -155,6 +155,20 @@ Fitur baru:
   dan ketik nama klien yang sama (repeat order), email/telepon/alamat
   otomatis terisi.
 
+- **Lampiran Gambar** — di form Buat Penawaran, ada tombol "📤 Tambah Gambar" (bisa pilih beberapa sekaligus, mis. mockup desain atau referensi produk). Otomatis muncul sebagai galeri di PDF penawaran, sebelum bagian tanda tangan.
+
+## Fitur baru: Penawaran Harga (Quotation)
+
+Tab **"Penawaran"** — untuk klien yang butuh dokumen resmi sebelum deal (biasanya klien korporat/PO besar):
+
+- Buat penawaran dengan format mirip invoice (kop surat, tabel item, dll), tapi ada **"Berlaku Hingga"** (bukan jatuh tempo) dan PDF-nya bertuliskan **"PENAWARAN HARGA"**, bukan "INVOICE"
+- Status: **Menunggu / Diterima / Ditolak** — ubah lewat dropdown di tiap kartu
+- Nomor otomatis: `QUO-2026-0001`, terpisah dari nomor invoice
+- Tombol **🧾 Jadikan Invoice** — begitu klien setuju, data penawaran otomatis dipindah ke form Buat Invoice (tinggal cek & simpan), status penawaran ikut berubah jadi "Diterima" dan tertaut ke invoice hasilnya
+- Preview/Download PDF & JPG, share link — sama seperti invoice
+
+Setelah update ini, jalankan `supabase/schema.sql` (menambahkan tabel `quotations`, aman diulang).
+
 ## Update lanjutan #3: upload gambar langsung, urutan invoice angka asli, fix tanda tangan
 
 - **Upload gambar langsung dari HP** — di form Kasir (tanda tangan) dan

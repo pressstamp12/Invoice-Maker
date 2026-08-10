@@ -138,6 +138,32 @@ create table if not exists customers (
 );
 create unique index if not exists idx_customers_name_lower on customers (lower(name));
 
+-- ---------- QUOTATIONS (Penawaran Harga) ----------
+create table if not exists quotations (
+  quotation_number text primary key,
+  quotation_date    date not null default current_date,
+  valid_until       date,
+  client_name       text not null,
+  client_address    text default '',
+  client_email      text default '',
+  client_phone      text default '',
+  items_json        jsonb not null default '[]',
+  notes             text default '',
+  tax_percent       numeric default 0,
+  discount          numeric default 0,
+  subtotal          numeric default 0,
+  tax_amount        numeric default 0,
+  total             numeric default 0,
+  status            text default 'Menunggu', -- Menunggu | Diterima | Ditolak
+  company_id        text references companies(company_id) on delete set null,
+  cashier_id        text references cashiers(cashier_id) on delete set null,
+  converted_invoice_number text references invoices(invoice_number) on delete set null,
+  attachments        jsonb default '[]', -- lampiran gambar: [{"url":"...","caption":"..."}]
+  created_at        timestamptz not null default now()
+);
+create index if not exists idx_quotations_status on quotations(status);
+alter table quotations add column if not exists attachments jsonb default '[]';
+
 -- ---------- HARGA PER CABANG (override default_price per item per lokasi) ----------
 -- Kosong/tidak ada baris = pakai items.default_price. Ada baris = pakai harga ini
 -- untuk kombinasi item + cabang tersebut.
@@ -172,11 +198,12 @@ alter table cash_flow      enable row level security;
 alter table app_settings   enable row level security;
 alter table customers      enable row level security;
 alter table item_branch_prices enable row level security;
+alter table quotations enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['bank_accounts','companies','cashiers','items','accounts','invoices','purchases','cash_flow','app_settings','customers','item_branch_prices']
+  foreach t in array array['bank_accounts','companies','cashiers','items','accounts','invoices','purchases','cash_flow','app_settings','customers','item_branch_prices','quotations']
   loop
     execute format('drop policy if exists "auth_all_%1$s" on %1$s', t);
     execute format(

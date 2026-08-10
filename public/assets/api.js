@@ -372,19 +372,20 @@
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 
-  async function renderInvoiceToCanvas(invNo) {
-    const html = await buildInvoiceHtmlForCapture(invNo);
+  async function renderHtmlToCanvas(html) {
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:420px;border:0;';
     document.body.appendChild(iframe);
     try {
       iframe.contentDocument.open(); iframe.contentDocument.write(html); iframe.contentDocument.close();
       await waitImagesLoaded(iframe.contentDocument, 3000);
-      const canvas = await html2canvas(iframe.contentDocument.body, { scale: 2, backgroundColor: '#fff', useCORS: true, allowTaint: true });
-      return canvas;
+      return await html2canvas(iframe.contentDocument.body, { scale: 2, backgroundColor: '#fff', useCORS: true, allowTaint: true });
     } finally {
       if (iframe.parentNode) iframe.parentNode.removeChild(iframe); // selalu dibersihkan, sukses ataupun gagal
     }
+  }
+  async function renderInvoiceToCanvas(invNo) {
+    return renderHtmlToCanvas(await buildInvoiceHtmlForCapture(invNo));
   }
 
   async function generateInvoicePdf(invNo) {
@@ -419,6 +420,135 @@
   async function saveJpgToDrive(invNo) {
     const res = await generateInvoiceJpg(invNo);
     return uploadToStorage('jpg/' + invNo + '.jpg', b64ToBlob(res.dataUrl.split(',')[1], 'image/jpeg'), 'image/jpeg');
+  }
+
+  /* ============ PENAWARAN HARGA (Quotation) ============ */
+  async function generateQuotationNumber() {
+    const year = new Date().getFullYear();
+    const { data, error } = await sb.from('quotations').select('quotation_number').like('quotation_number', `QUO-${year}-%`);
+    if (error) throw new Error(error.message);
+    let next = 1;
+    const nums = (data || []).map(r => parseInt(r.quotation_number.split('-')[2], 10)).filter(n => !isNaN(n));
+    if (nums.length) next = Math.max.apply(null, nums) + 1;
+    return 'QUO-' + year + '-' + pad(next, 4);
+  }
+  async function saveQuotation(data) {
+    if (!data.items || !data.items.length) throw new Error('Penawaran harus memiliki minimal 1 item.');
+    if (!data.clientName || !data.clientName.trim()) throw new Error('Nama klien wajib diisi.');
+    let subtotal = 0;
+    data.items.forEach(it => { subtotal += num(it.qty) * num(it.price); });
+    const taxPercent = num(data.taxPercent), discount = num(data.discount);
+    const taxAmount = Math.max(subtotal - discount, 0) * (taxPercent / 100);
+    const total = Math.max(subtotal - discount, 0) + taxAmount;
+    const isEdit = !!(data.quotationNumber && data.quotationNumber.trim());
+    const qNo = isEdit ? data.quotationNumber : await generateQuotationNumber();
+    let createdAt = nowIso(), existingStatus = null;
+    if (isEdit) {
+      const existing = await sb.from('quotations').select('created_at, status').eq('quotation_number', qNo).maybeSingle();
+      if (existing.data) { if (existing.data.created_at) createdAt = existing.data.created_at; existingStatus = existing.data.status; }
+    }
+    ok(await sb.from('quotations').upsert({
+      quotation_number: qNo, quotation_date: data.quotationDate || today(), valid_until: data.validUntil || null,
+      client_name: data.clientName, client_address: data.clientAddress || '', client_email: data.clientEmail || '',
+      client_phone: data.clientPhone || '', items_json: data.items, notes: data.notes || '',
+      tax_percent: taxPercent, discount, subtotal, tax_amount: taxAmount, total,
+      status: data.status || existingStatus || 'Menunggu', created_at: createdAt,
+      company_id: data.companyId || null, cashier_id: data.cashierId || null,
+      attachments: data.attachments || []
+    }));
+    try { await upsertCustomerFromInvoice(data); } catch (e) { console.warn('Gagal simpan data customer:', e.message); }
+    return { success: true, quotationNumber: qNo, total };
+  }
+  async function getQuotationList() {
+    const data = ok(await sb.from('quotations').select('*').order('created_at', { ascending: false }));
+    const [cashiers, companies] = await Promise.all([getCashiers(), getCompanies()]);
+    return data.map(row => {
+      const cashier = cashiers.find(c => c.cashierId === row.cashier_id);
+      const company = companies.find(c => c.companyId === row.company_id);
+      return {
+        quotationNumber: row.quotation_number, quotationDate: fmtDate(row.quotation_date), validUntil: fmtDate(row.valid_until),
+        clientName: row.client_name, total: row.total, status: row.status,
+        cashierName: cashier ? cashier.name : '', companyId: row.company_id || '', companyName: company ? company.name : '',
+        convertedInvoiceNumber: row.converted_invoice_number || ''
+      };
+    });
+  }
+  async function getQuotationByNumber(qNo) {
+    const { data, error } = await sb.from('quotations').select('*').eq('quotation_number', qNo).maybeSingle();
+    if (error || !data) throw new Error('Penawaran tidak ditemukan: ' + qNo);
+    return {
+      quotationNumber: data.quotation_number, quotationDate: fmtDate(data.quotation_date), validUntil: fmtDate(data.valid_until),
+      clientName: data.client_name, clientAddress: data.client_address, clientEmail: data.client_email, clientPhone: data.client_phone,
+      items: data.items_json || [], notes: data.notes, taxPercent: data.tax_percent, discount: data.discount,
+      subtotal: data.subtotal, taxAmount: data.tax_amount, total: data.total, status: data.status,
+      companyId: data.company_id, cashierId: data.cashier_id, convertedInvoiceNumber: data.converted_invoice_number || '',
+      attachments: data.attachments || []
+    };
+  }
+  async function deleteQuotation(qNo) {
+    const { error } = await sb.from('quotations').delete().eq('quotation_number', qNo);
+    if (error) throw new Error('Penawaran tidak ditemukan.');
+    return { success: true };
+  }
+  async function updateQuotationStatus(qNo, status) {
+    const { error } = await sb.from('quotations').update({ status }).eq('quotation_number', qNo);
+    if (error) throw new Error('Penawaran tidak ditemukan.');
+    return { success: true };
+  }
+  async function markQuotationConverted(qNo, invoiceNumber) {
+    await sb.from('quotations').update({ status: 'Diterima', converted_invoice_number: invoiceNumber }).eq('quotation_number', qNo);
+    return { success: true };
+  }
+
+  async function buildQuotationHtml(qNo) {
+    const quotation = await getQuotationByNumber(qNo);
+    const company = await getCompanyById(quotation.companyId);
+    const cashier = quotation.cashierId ? await getCashierById(quotation.cashierId) : null;
+    const currency = company.currency || 'Rp';
+    return window.renderQuotationTemplate({ quotation, company, cashier, currency });
+  }
+  async function getQuotationPreviewHtml(qNo) { return buildQuotationHtml(qNo); }
+  async function buildQuotationHtmlForCapture(qNo) {
+    const quotation = await getQuotationByNumber(qNo);
+    const company = await getCompanyById(quotation.companyId);
+    const cashier = quotation.cashierId ? await getCashierById(quotation.cashierId) : null;
+    const currency = company.currency || 'Rp';
+    const attachmentUrls = (quotation.attachments || []).map(a => (typeof a === 'string' ? a : a.url));
+    const [logoData, sigData, attachmentData] = await Promise.all([
+      toDataUri(company.logoUrl), cashier ? toDataUri(cashier.signatureUrl) : Promise.resolve(null),
+      Promise.all(attachmentUrls.map(u => toDataUri(u)))
+    ]);
+    const companyForRender = Object.assign({}, company, { logoUrl: logoData });
+    const cashierForRender = cashier ? Object.assign({}, cashier, { signatureUrl: sigData }) : null;
+    const quotationForRender = Object.assign({}, quotation, {
+      attachments: (quotation.attachments || []).map((a, i) => ({
+        url: attachmentData[i], caption: (typeof a === 'string' ? '' : (a.caption || ''))
+      }))
+    });
+    return window.renderQuotationTemplate({ quotation: quotationForRender, company: companyForRender, cashier: cashierForRender, currency });
+  }
+  async function renderQuotationToCanvas(qNo) {
+    return renderHtmlToCanvas(await buildQuotationHtmlForCapture(qNo));
+  }
+  async function generateQuotationPdf(qNo) {
+    const canvas = await withTimeout(renderQuotationToCanvas(qNo), 20000, 'Membuat PDF');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'px', format: [canvas.width / 2, canvas.height / 2] });
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width / 2, canvas.height / 2);
+    const base64 = pdf.output('datauristring').split(',')[1];
+    return { filename: qNo + '.pdf', base64 };
+  }
+  async function generateQuotationJpg(qNo) {
+    const canvas = await withTimeout(renderQuotationToCanvas(qNo), 20000, 'Membuat JPG');
+    return { filename: qNo + '.jpg', dataUrl: canvas.toDataURL('image/jpeg', 0.92) };
+  }
+  async function saveQuotationPdfToDrive(qNo) {
+    const res = await generateQuotationPdf(qNo);
+    return uploadToStorage('quotation-pdf/' + qNo + '.pdf', b64ToBlob(res.base64, 'application/pdf'), 'application/pdf');
+  }
+  async function saveQuotationJpgToDrive(qNo) {
+    const res = await generateQuotationJpg(qNo);
+    return uploadToStorage('quotation-jpg/' + qNo + '.jpg', b64ToBlob(res.dataUrl.split(',')[1], 'image/jpeg'), 'image/jpeg');
   }
 
   async function uploadImage(file, folder) {
@@ -892,6 +1022,8 @@
     getItems, saveItem, deleteItem, getCustomers, uploadImage, getItemBranchPrices, saveItemBranchPrices,
     saveInvoice, getInvoiceList, getInvoiceByNumber, deleteInvoice, updateInvoiceStatus, getInvoiceNumbers,
     getDeletedInvoices, restoreInvoice, permanentlyDeleteInvoice,
+    saveQuotation, getQuotationList, getQuotationByNumber, deleteQuotation, updateQuotationStatus, markQuotationConverted,
+    getQuotationPreviewHtml, generateQuotationPdf, generateQuotationJpg, saveQuotationPdfToDrive, saveQuotationJpgToDrive,
     getInvoicePreviewHtml, generateInvoicePdf, generateInvoiceJpg, savePdfToDrive, saveJpgToDrive,
     getPurchasesByInvoice, savePurchases, getHppModalData,
     importExcelRows, getImportPreviewInfo,

@@ -232,6 +232,12 @@ input:focus, textarea:focus, select:focus { outline:none; border-color:var(--pri
 .item-card:hover, .item-card:active { box-shadow:0 4px 12px rgba(15,23,42,.12); border-color:var(--accent); }
 .item-card .ic-icon { font-size:26px; margin-bottom:6px; }
 .item-card .ic-photo { width:100%; height:90px; object-fit:cover; border-radius:10px; margin-bottom:8px; background:#f1f5f9; }
+
+/* ---------- LAMPIRAN GAMBAR (Penawaran) ---------- */
+.attach-preview-wrap { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.attach-thumb { position:relative; width:80px; height:80px; border-radius:8px; overflow:hidden; border:1px solid var(--border); }
+.attach-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.attach-thumb .attach-remove { position:absolute; top:2px; right:2px; width:20px; height:20px; border-radius:50%; background:rgba(15,23,42,.75); color:#fff; border:none; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
 .item-card .ic-name { font-weight:700; font-size:13px; margin-bottom:3px; line-height:1.3; padding-right:52px; }
 .item-card .ic-cat { font-size:11px; color:var(--muted); margin-bottom:8px; }
 .item-card .ic-price { font-size:14px; font-weight:700; color:var(--primary); }
