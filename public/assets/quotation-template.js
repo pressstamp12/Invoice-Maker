@@ -24,7 +24,7 @@ window.renderQuotationTemplate = function ({ quotation, company, cashier, curren
           ${quotation.attachments.map(a => {
             const url = typeof a === 'string' ? a : a.url;
             const caption = typeof a === 'string' ? '' : (a.caption || '');
-            return `<div><img src="${url}" alt="">${caption ? `<div class="attach-caption">${escapeHtmlT(caption)}</div>` : ''}</div>`;
+            return `<div class="attach-item"><img src="${url}" alt="">${caption ? `<div class="attach-caption">${escapeHtmlT(caption)}</div>` : ''}</div>`;
           }).join('')}
         </div>
       </div>`
@@ -73,10 +73,11 @@ window.renderQuotationTemplate = function ({ quotation, company, cashier, curren
   .disclaimer { background:#f8fafc; border-radius:8px; padding:10px 12px; font-size:11px; color:#64748b; margin-bottom:14px; }
   .attach-section { margin-bottom:18px; }
   .attach-section h4 { font-size: 11px; text-transform: uppercase; color: #64748b; margin: 0 0 8px; letter-spacing:1px; }
-  .attach-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .attach-grid { font-size:0; margin:0 -5px; }
+  .attach-item { display:inline-block; width:31.33%; margin:0 1% 12px; vertical-align:top; font-size:12px; }
   .attach-grid img { width:100%; height:130px; object-fit:cover; border-radius:8px; border:1px solid #e2e8f0; display:block; }
   .attach-caption { font-size:10.5px; color:#64748b; text-align:center; margin-top:3px; }
-  @media (max-width: 480px) { .attach-grid { grid-template-columns:repeat(2,1fr); } .attach-grid img { height:100px; } }
+  @media (max-width: 480px) { .attach-item { width:48%; } .attach-grid img { height:100px; } }
   @media (max-width: 480px) {
     body { margin: 14px; font-size: 12.5px; } .header { gap: 8px; padding-bottom: 10px; margin-bottom: 14px; align-items: center; }
     .company img.logo { max-height: 44px; max-width: 90px; } .company h2 { font-size: 16px; } .company p { font-size: 10.5px; }
