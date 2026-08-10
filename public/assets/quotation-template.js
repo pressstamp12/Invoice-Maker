@@ -2,7 +2,24 @@
  * Template Penawaran Harga (Quotation) — turunan dari invoice-template.js,
  * disesuaikan: tanpa status Lunas/Belum Lunas, ada "Berlaku hingga", tanpa info pembayaran.
  */
-window.renderQuotationTemplate = function ({ quotation, company, cashier, currency }) {
+
+// Galeri lampiran — gambar TIDAK dipotong/dipaksa pas kotak (object-fit tidak didukung
+// html2canvas, penyebab gambar "ketarik" sebelumnya). Lebar dibatasi, tinggi menyesuaikan
+// otomatis (rasio asli gambar tetap terjaga).
+function attachmentsBlockHtml(attachments, title) {
+  return `<div class="attach-section">
+    <h4>${title}</h4>
+    <div class="attach-grid">
+      ${attachments.map(a => {
+        const url = typeof a === 'string' ? a : a.url;
+        const caption = typeof a === 'string' ? '' : (a.caption || '');
+        return `<div class="attach-item"><img src="${url}" alt="">${caption ? `<div class="attach-caption">${escapeHtmlT(caption)}</div>` : ''}</div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+window.renderQuotationTemplate = function ({ quotation, company, cashier, currency, skipAttachments }) {
   const itemsRows = (quotation.items || []).map(item => `
     <tr>
       <td class="desc">${escapeHtmlT(item.desc)}</td>
@@ -17,17 +34,8 @@ window.renderQuotationTemplate = function ({ quotation, company, cashier, curren
     ? `<img class="sign-img" src="${cashier.signatureUrl}" alt="ttd"><div class="sign-line">${escapeHtmlT(cashier.name)}</div>`
     : `<div class="sign-line no-img">${escapeHtmlT(cashier ? cashier.name : company.name)}</div>`;
 
-  const attachmentsHtml = (quotation.attachments && quotation.attachments.length)
-    ? `<div class="attach-section">
-        <h4>Lampiran / Referensi</h4>
-        <div class="attach-grid">
-          ${quotation.attachments.map(a => {
-            const url = typeof a === 'string' ? a : a.url;
-            const caption = typeof a === 'string' ? '' : (a.caption || '');
-            return `<div class="attach-item"><img src="${url}" alt="">${caption ? `<div class="attach-caption">${escapeHtmlT(caption)}</div>` : ''}</div>`;
-          }).join('')}
-        </div>
-      </div>`
+  const attachmentsHtml = (!skipAttachments && quotation.attachments && quotation.attachments.length)
+    ? attachmentsBlockHtml(quotation.attachments, 'Lampiran / Referensi')
     : '';
 
   return `<!DOCTYPE html>
@@ -73,11 +81,12 @@ window.renderQuotationTemplate = function ({ quotation, company, cashier, curren
   .disclaimer { background:#f8fafc; border-radius:8px; padding:10px 12px; font-size:11px; color:#64748b; margin-bottom:14px; }
   .attach-section { margin-bottom:18px; }
   .attach-section h4 { font-size: 11px; text-transform: uppercase; color: #64748b; margin: 0 0 8px; letter-spacing:1px; }
-  .attach-grid { font-size:0; margin:0 -5px; }
-  .attach-item { display:inline-block; width:31.33%; margin:0 1% 12px; vertical-align:top; font-size:12px; }
-  .attach-grid img { width:100%; height:130px; object-fit:cover; border-radius:8px; border:1px solid #e2e8f0; display:block; }
+  .attach-grid { font-size:0; margin:0 -6px; }
+  .attach-item { display:inline-block; width:48%; margin:0 1% 14px; vertical-align:top; font-size:12px; }
+  .attach-grid img { width:100%; height:auto; border-radius:8px; border:1px solid #e2e8f0; display:block; }
   .attach-caption { font-size:10.5px; color:#64748b; text-align:center; margin-top:3px; }
-  @media (max-width: 480px) { .attach-item { width:48%; } .attach-grid img { height:100px; } }
+  .attach-page-title { font-size:18px; font-weight:bold; color:#1e3a5f; margin:0 0 4px; }
+  .attach-page-sub { font-size:12px; color:#64748b; margin:0 0 20px; }
   @media (max-width: 480px) {
     body { margin: 14px; font-size: 12.5px; } .header { gap: 8px; padding-bottom: 10px; margin-bottom: 14px; align-items: center; }
     .company img.logo { max-height: 44px; max-width: 90px; } .company h2 { font-size: 16px; } .company p { font-size: 10.5px; }
@@ -145,6 +154,33 @@ window.renderQuotationTemplate = function ({ quotation, company, cashier, curren
 
 
   <div class="footer"><p>Terima kasih atas kepercayaan Anda kepada ${escapeHtmlT(company.name)}</p></div>
+  </div>
+</body></html>`;
+};
+
+// Halaman terpisah khusus lampiran — dipakai sebagai HALAMAN KE-2 di PDF saat lampiran ada,
+// supaya halaman pertama (rincian harga) tidak jadi kepanjangan.
+window.renderQuotationAttachmentsPage = function ({ quotation, company, attachments }) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Helvetica', Arial, sans-serif; color: #0f172a; font-size: 13px; line-height: 1.45; margin: 40px; }
+  .invoice-wrap { max-width: 780px; margin: 0 auto; }
+  .attach-page-title { font-size:18px; font-weight:bold; color:#1e3a5f; margin:0 0 4px; }
+  .attach-page-sub { font-size:12px; color:#64748b; margin:0 0 20px; }
+  .attach-section h4 { font-size: 11px; text-transform: uppercase; color: #64748b; margin: 0 0 8px; letter-spacing:1px; }
+  .attach-grid { font-size:0; margin:0 -6px; }
+  .attach-item { display:inline-block; width:48%; margin:0 1% 14px; vertical-align:top; font-size:12px; }
+  .attach-grid img { width:100%; height:auto; border-radius:8px; border:1px solid #e2e8f0; display:block; }
+  .attach-caption { font-size:10.5px; color:#64748b; text-align:center; margin-top:3px; }
+</style></head>
+<body>
+  <div class="invoice-wrap">
+    <div class="attach-page-title">Lampiran / Referensi</div>
+    <div class="attach-page-sub">${escapeHtmlT(quotation.quotationNumber)} — ${escapeHtmlT(company.name)}</div>
+    ${attachmentsBlockHtml(attachments, 'Gambar Terlampir')}
   </div>
 </body></html>`;
 };

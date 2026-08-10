@@ -508,7 +508,7 @@
     return window.renderQuotationTemplate({ quotation, company, cashier, currency });
   }
   async function getQuotationPreviewHtml(qNo) { return buildQuotationHtml(qNo); }
-  async function buildQuotationHtmlForCapture(qNo) {
+  async function prepareQuotationRenderData(qNo) {
     const quotation = await getQuotationByNumber(qNo);
     const company = await getCompanyById(quotation.companyId);
     const cashier = quotation.cashierId ? await getCashierById(quotation.cashierId) : null;
@@ -520,21 +520,36 @@
     ]);
     const companyForRender = Object.assign({}, company, { logoUrl: logoData });
     const cashierForRender = cashier ? Object.assign({}, cashier, { signatureUrl: sigData }) : null;
-    const quotationForRender = Object.assign({}, quotation, {
-      attachments: (quotation.attachments || []).map((a, i) => ({
-        url: attachmentData[i], caption: (typeof a === 'string' ? '' : (a.caption || ''))
-      }))
-    });
-    return window.renderQuotationTemplate({ quotation: quotationForRender, company: companyForRender, cashier: cashierForRender, currency });
+    const attachmentsForRender = (quotation.attachments || []).map((a, i) => ({
+      url: attachmentData[i], caption: (typeof a === 'string' ? '' : (a.caption || ''))
+    }));
+    const quotationForRender = Object.assign({}, quotation, { attachments: attachmentsForRender });
+    return { quotation: quotationForRender, company: companyForRender, cashier: cashierForRender, currency, attachments: attachmentsForRender };
+  }
+  async function buildQuotationHtmlForCapture(qNo) {
+    const d = await prepareQuotationRenderData(qNo);
+    return window.renderQuotationTemplate({ quotation: d.quotation, company: d.company, cashier: d.cashier, currency: d.currency });
   }
   async function renderQuotationToCanvas(qNo) {
     return renderHtmlToCanvas(await buildQuotationHtmlForCapture(qNo));
   }
   async function generateQuotationPdf(qNo) {
-    const canvas = await withTimeout(renderQuotationToCanvas(qNo), 20000, 'Membuat PDF');
+    const canvas1 = await withTimeout((async () => {
+      const d = await prepareQuotationRenderData(qNo);
+      const html = window.renderQuotationTemplate({ quotation: d.quotation, company: d.company, cashier: d.cashier, currency: d.currency, skipAttachments: d.attachments.length > 0 });
+      return { canvas: await renderHtmlToCanvas(html), data: d };
+    })(), 20000, 'Membuat PDF');
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ unit: 'px', format: [canvas.width / 2, canvas.height / 2] });
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width / 2, canvas.height / 2);
+    const c1 = canvas1.canvas, d = canvas1.data;
+    const pdf = new jsPDF({ unit: 'px', format: [c1.width / 2, c1.height / 2] });
+    pdf.addImage(c1.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, c1.width / 2, c1.height / 2);
+    // Lampiran (kalau ada) jadi halaman ke-2 terpisah, supaya halaman rincian harga tidak kepanjangan.
+    if (d.attachments.length) {
+      const attachHtml = window.renderQuotationAttachmentsPage({ quotation: d.quotation, company: d.company, attachments: d.attachments });
+      const c2 = await withTimeout(renderHtmlToCanvas(attachHtml), 20000, 'Membuat halaman lampiran');
+      pdf.addPage([c2.width / 2, c2.height / 2]);
+      pdf.addImage(c2.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, c2.width / 2, c2.height / 2);
+    }
     const base64 = pdf.output('datauristring').split(',')[1];
     return { filename: qNo + '.pdf', base64 };
   }
