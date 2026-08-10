@@ -848,6 +848,8 @@ function editQuotation(qNo) {
   run('getQuotationByNumber', [qNo], d => {
     document.querySelector('.tab-btn[data-tab="quotation"]').click();
     $('quoFormCard').classList.remove('hidden');
+    fillSelect('quoCompany', companiesCache, 'companyId', 'name', '<option value="">(Belum ada perusahaan)</option>');
+    fillSelect('quoCashier', cashiersCache, 'cashierId', 'name', '', '<option value="">— Tidak ada —</option>');
     setVal('editQuotationNumber', d.quotationNumber);
     setVal('quoCompany', d.companyId || ''); setVal('quoCashier', d.cashierId || '');
     setVal('quoClientName', d.clientName || ''); setVal('quoClientEmail', d.clientEmail || '');
