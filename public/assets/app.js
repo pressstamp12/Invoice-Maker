@@ -1854,7 +1854,9 @@ function deleteAccountUi(id) {
 
 /* ---- Modal catat kas ---- */
 function fillAccountSelect(selId, selectedVal) {
-  fillSelect(selId, accountsCache, 'accountId', 'name', '<option value="">(Tambah akun dulu di tab Kas)</option>');
+  fillSelect(selId, accountsCache, 'accountId', 'name',
+    '<option value="">(Tambah akun dulu di tab Kas)</option>',
+    '<option value="">— Pilih Akun —</option>');
   if (selectedVal && accountsCache.length) $(selId).value = selectedVal;
 }
 function openCashModal(type) {
@@ -1893,7 +1895,19 @@ function openPayModal(inv, total) {
   setVal('payDate', todayStr()); setVal('payAmount', total || 0); setVal('payNote', '');
   $('payMarkPaid').checked = true;
   fillAccountSelect('payAccount');
+  $('payWarnBox').classList.add('hidden');
   $('payModalOverlay').classList.remove('hidden');
+  // Cek dulu apakah invoice ini sudah pernah tercatat ada penerimaan — kalau iya,
+  // kemungkinan besar ini akan jadi double-input (di tempat Anda, Terima Bayar biasanya cuma 1x).
+  run('getInvoiceCashSummary', [inv], summary => {
+    if (summary && summary.paidIn > 0) {
+      const inFlows = (summary.flows || []).filter(f => f.type === 'in');
+      const nameOf = id => { const a = accountsCache.find(x => x.accountId === id); return a ? a.name : id; };
+      const detail = inFlows.map(f => `• ${formatMoney(f.amount)} ke akun ${nameOf(f.accountId)} (${f.date})`).join('<br>');
+      $('payWarnBox').innerHTML = `⚠️ <strong>Invoice ini sudah tercatat ada penerimaan sebelumnya (total ${formatMoney(summary.paidIn)}):</strong><br>${detail}<br>Pastikan ini memang penerimaan tambahan/susulan, bukan salah pencet ulang.`;
+      $('payWarnBox').classList.remove('hidden');
+    }
+  }, { loading: false });
 }
 function closePayModal() { $('payModalOverlay').classList.add('hidden'); }
 function savePayModal() {
@@ -1902,6 +1916,9 @@ function savePayModal() {
     note: val('payNote'), markPaid: $('payMarkPaid').checked };
   if (!payload.accountId) { toast('Pilih akun penerima. Tambahkan akun di tab Kas.', true); return; }
   if (payload.amount <= 0) { toast('Jumlah harus lebih dari 0', true); return; }
+  if (!$('payWarnBox').classList.contains('hidden')) {
+    if (!confirm('Invoice ini sudah pernah tercatat ada penerimaan sebelumnya. Yakin mau tetap catat penerimaan baru ini?')) return;
+  }
   run('recordInvoicePayment', [payload], () => { toast('Penerimaan tersimpan'); closePayModal(); loadInvoiceList(); }, { lockKey: 'recordInvoicePayment:' + _payInvoiceNumber });
 }
 
