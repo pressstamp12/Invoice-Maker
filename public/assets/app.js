@@ -1750,19 +1750,26 @@ function populateCashAccountFilter(accounts) {
     accounts.map(a => `<option value="${a.accountId}">${escapeHtml(a.name)}</option>`).join('');
   sel.value = cur;
 }
+function goToInvoicePreview(invNo) {
+  document.querySelector('.tab-btn[data-tab="list"]').click();
+  openPreview(invNo);
+}
 function renderCashFlow(flows) {
   const wrap = $('cashFlowWrap');
   if (!flows.length) { wrap.innerHTML = '<p class="muted">Belum ada transaksi kas.</p>'; return; }
   const icon = { in: '⬇️', out: '⬆️', transfer: '🔁' }, sign = { in: '+', out: '−', transfer: '' };
   wrap.innerHTML = flows.map(f => {
     let title, sub;
+    const invoiceLinkHtml = f.invoiceNumber
+      ? ` · <a href="#" class="cf-invoice-link" onclick="event.preventDefault();goToInvoicePreview('${f.invoiceNumber}')">${escapeHtml(f.invoiceNumber)}</a>`
+      : '';
     if (f.type === 'transfer') {
       title = `${escapeHtml(f.accountName)} → ${escapeHtml(f.toAccountName)}`;
-      sub = 'Transfer' + (f.note ? ' · ' + escapeHtml(f.note) : '');
+      sub = 'Transfer' + invoiceLinkHtml + (f.note ? ' · ' + escapeHtml(f.note) : '');
     } else {
       title = escapeHtml(f.accountName);
       sub = (f.category ? escapeHtml(f.category) : (f.type === 'in' ? 'Masuk' : 'Keluar'))
-          + (f.invoiceNumber ? ' · ' + escapeHtml(f.invoiceNumber) : '')
+          + invoiceLinkHtml
           + (f.note ? ' · ' + escapeHtml(f.note) : '');
     }
     const recordedAt = f.createdAt ? new Date(f.createdAt).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
