@@ -1754,6 +1754,15 @@ function goToInvoicePreview(invNo) {
   document.querySelector('.tab-btn[data-tab="list"]').click();
   openPreview(invNo);
 }
+function goToInvoiceContext(invNo, sourceType) {
+  if (sourceType === 'hpp') {
+    openHppModal(invNo);
+  } else if (sourceType === 'payment') {
+    run('getInvoiceByNumber', [invNo], inv => openPayModal(invNo, inv.total), { onErr: err => toast(err.message, true) });
+  } else {
+    goToInvoicePreview(invNo);
+  }
+}
 function renderCashFlow(flows) {
   const wrap = $('cashFlowWrap');
   if (!flows.length) { wrap.innerHTML = '<p class="muted">Belum ada transaksi kas.</p>'; return; }
@@ -1778,7 +1787,7 @@ function renderCashFlow(flows) {
     const delBtn = isHpp
       ? `<button class="cf-del" title="Kas HPP — kelola lewat modal HPP invoice terkait" disabled style="opacity:.35;cursor:not-allowed">🔒</button>`
       : `<button class="cf-del" title="Hapus" onclick="event.stopPropagation();deleteCashFlowUi('${f.flowId}')">🗑️</button>`;
-    const clickable = f.invoiceNumber ? ` cf-row-clickable" onclick="goToInvoicePreview('${f.invoiceNumber}')"` : '"';
+    const clickable = f.invoiceNumber ? ` cf-row-clickable" onclick="goToInvoiceContext('${f.invoiceNumber}','${f.sourceType || ''}')"` : '"';
     return `<div class="cf-row${clickable}>
       <div class="cf-icon ${f.type}">${icon[f.type]}</div>
       <div class="cf-main">
