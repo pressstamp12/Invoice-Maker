@@ -1760,16 +1760,16 @@ function renderCashFlow(flows) {
   const icon = { in: '⬇️', out: '⬆️', transfer: '🔁' }, sign = { in: '+', out: '−', transfer: '' };
   wrap.innerHTML = flows.map(f => {
     let title, sub;
-    const invoiceLinkHtml = f.invoiceNumber
-      ? ` · <a href="#" class="cf-invoice-link" onclick="event.preventDefault();goToInvoicePreview('${f.invoiceNumber}')">${escapeHtml(f.invoiceNumber)}</a>`
+    const invoiceTagHtml = f.invoiceNumber
+      ? ` · <span class="cf-invoice-link">${escapeHtml(f.invoiceNumber)}</span>`
       : '';
     if (f.type === 'transfer') {
       title = `${escapeHtml(f.accountName)} → ${escapeHtml(f.toAccountName)}`;
-      sub = 'Transfer' + invoiceLinkHtml + (f.note ? ' · ' + escapeHtml(f.note) : '');
+      sub = 'Transfer' + invoiceTagHtml + (f.note ? ' · ' + escapeHtml(f.note) : '');
     } else {
       title = escapeHtml(f.accountName);
       sub = (f.category ? escapeHtml(f.category) : (f.type === 'in' ? 'Masuk' : 'Keluar'))
-          + invoiceLinkHtml
+          + invoiceTagHtml
           + (f.note ? ' · ' + escapeHtml(f.note) : '');
     }
     const recordedAt = f.createdAt ? new Date(f.createdAt).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
@@ -1777,8 +1777,9 @@ function renderCashFlow(flows) {
     const isHpp = f.sourceType === 'hpp';
     const delBtn = isHpp
       ? `<button class="cf-del" title="Kas HPP — kelola lewat modal HPP invoice terkait" disabled style="opacity:.35;cursor:not-allowed">🔒</button>`
-      : `<button class="cf-del" title="Hapus" onclick="deleteCashFlowUi('${f.flowId}')">🗑️</button>`;
-    return `<div class="cf-row">
+      : `<button class="cf-del" title="Hapus" onclick="event.stopPropagation();deleteCashFlowUi('${f.flowId}')">🗑️</button>`;
+    const clickable = f.invoiceNumber ? ` cf-row-clickable" onclick="goToInvoicePreview('${f.invoiceNumber}')"` : '"';
+    return `<div class="cf-row${clickable}>
       <div class="cf-icon ${f.type}">${icon[f.type]}</div>
       <div class="cf-main">
         <div class="cf-title">${title}${isHpp ? ' <span class="acc-badge other" style="font-size:9px">HPP</span>' : ''}</div>

@@ -200,8 +200,9 @@ input:focus, textarea:focus, select:focus { outline:none; border-color:var(--pri
 .cf-main { flex:1; min-width:0; }
 .cf-title { font-size:13px; font-weight:600; }
 .cf-sub { font-size:11px; color:var(--muted); }
-.cf-invoice-link { color:var(--accent); font-weight:700; text-decoration:none; }
-.cf-invoice-link:hover, .cf-invoice-link:active { text-decoration:underline; }
+.cf-invoice-link { color:var(--accent); font-weight:700; }
+.cf-row-clickable { cursor:pointer; transition:background .1s; }
+.cf-row-clickable:active { background:#f1f5f9; }
 .cf-amount { font-size:14px; font-weight:700; white-space:nowrap; }
 .cf-amount.in { color:var(--success); }
 .cf-amount.out { color:var(--danger); }
