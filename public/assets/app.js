@@ -124,6 +124,8 @@ function initApp() {
   $('btnShareJpgDrive').addEventListener('click', shareJpgDriveFromPreview);
   $('btnShareWa').addEventListener('click', shareWhatsApp);
   $('btnCopyLink').addEventListener('click', copyShareLink);
+  $('btnCopyTextSummary').addEventListener('click', () => copyInvoiceSummaryText(currentPreviewInv));
+  $('btnDownloadTextSummary').addEventListener('click', () => downloadInvoiceSummaryText(currentPreviewInv));
 
   $('logoutBtn').addEventListener('click', doLogout);
 
@@ -603,6 +605,7 @@ function renderInvoiceList() {
       </div>
       <div class="inv-actions">
         <button class="prev-btn" onclick="openPreview('${inv.invoiceNumber}')">👁️ Preview/Share</button>
+        <button onclick="copyInvoiceSummaryText('${inv.invoiceNumber}')">📋 Copy Teks</button>
         <button onclick="openPayModal('${inv.invoiceNumber}', ${Number(inv.total) || 0})">💵 Terima Bayar</button>
         <button onclick="openHppModal('${inv.invoiceNumber}')">💰 HPP</button>
         <button onclick="editInvoice('${inv.invoiceNumber}')">✏️ Edit</button>
@@ -1048,6 +1051,81 @@ function saveHppModal() {
   }, { lockKey: 'savePurchases:' + hppCurrentInv });
 }
 function closeHppModal() { $('hppModalOverlay').classList.add('hidden'); }
+
+/* ---------------- RINGKASAN TEKS INVOICE (copy/download) ---------------- */
+// 400 invoice pertama masuk lewat Impor Excel dan sudah punya "nomor pesanan" asli
+// tertanam di nomor invoicenya sendiri (IMP-tahun-0001 s/d IMP-tahun-0400 = pesanan 1-400).
+// Invoice baru yang dibuat lewat form (INV-tahun-0001, dst) melanjutkan urutan itu,
+// jadi nomor pesanannya = urutan invoice + 400 (INV-...-0001 = pesanan 401).
+// Ganti angka ini kalau titik potongnya bukan 400.
+const ORDER_NUMBER_OFFSET = 400;
+function orderNumberFromInvoice(invNo) {
+  const m = /-([0-9]+)$/.exec(invNo || '');
+  const n = m ? parseInt(m[1], 10) : 0;
+  return (invNo || '').indexOf('IMP-') === 0 ? n : n + ORDER_NUMBER_OFFSET;
+}
+function accountNamesFromIds(ids) {
+  const uniq = Array.from(new Set((ids || []).filter(Boolean)));
+  if (!uniq.length) return '-';
+  return uniq.map(id => {
+    const a = accountsCache.find(x => x.accountId === id);
+    return a ? a.name : id;
+  }).join(', ');
+}
+async function buildInvoiceSummaryText(invNo) {
+  const [invoice, purchases, cashSummary] = await Promise.all([
+    window.API.getInvoiceByNumber(invNo),
+    window.API.getPurchasesByInvoice(invNo),
+    window.API.getInvoiceCashSummary(invNo)
+  ]);
+  const cashier = cashiersCache.find(c => c.cashierId === invoice.cashierId);
+  const revenue = Math.max((invoice.subtotal || 0) - (invoice.discount || 0), 0); // Harga Jual / Omset
+  const hppItemsTotal = (purchases.items || []).reduce((s, it) => s + (it.totalCost || (it.qty || 0) * (it.costPrice || 0)), 0); // Harga Beli
+  const hppOthersTotal = (purchases.others || []).reduce((s, o) => s + (o.totalCost || 0), 0); // Ongkir/diskon (biaya lainnya)
+  const profit = revenue - (hppItemsTotal + hppOthersTotal); // Laba
+
+  const beliAcc = accountNamesFromIds((purchases.items || []).map(it => it.accountId));
+  const ongkirAcc = accountNamesFromIds((purchases.others || []).map(o => o.accountId));
+  const terimaAcc = accountNamesFromIds((cashSummary.flows || []).filter(f => f.type === 'in').map(f => f.accountId));
+
+  return [
+    'Nomor pesanan : ' + orderNumberFromInvoice(invoice.invoiceNumber),
+    'Harga Beli : ' + formatMoney(hppItemsTotal),
+    'Harga Jual : ' + formatMoney(revenue),
+    'Ongkir/diskon : ' + formatMoney(hppOthersTotal),
+    'Laba : ' + formatMoney(profit),
+    'Cst : ' + (cashier ? cashier.name : '-'),
+    '',
+    'Pembayaran Beli : ' + beliAcc,
+    'Pembayaran ongkir : ' + ongkirAcc,
+    'Penerimaan : ' + terimaAcc
+  ].join('\n');
+}
+function copyInvoiceSummaryText(invNo) {
+  if (!invNo) return;
+  showLoading(true);
+  buildInvoiceSummaryText(invNo).then(text => {
+    showLoading(false);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => toast('Ringkasan ' + invNo + ' disalin'))
+        .catch(() => fallbackCopyText(text));
+    } else {
+      fallbackCopyText(text);
+    }
+  }).catch(err => { showLoading(false); toast(err.message, true); });
+}
+function downloadInvoiceSummaryText(invNo) {
+  if (!invNo) return;
+  showLoading(true);
+  buildInvoiceSummaryText(invNo).then(text => {
+    showLoading(false);
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    triggerDownload(url, 'Ringkasan-' + invNo + '.txt');
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast('Ringkasan ' + invNo + ' diunduh');
+  }).catch(err => { showLoading(false); toast(err.message, true); });
+}
 
 /* ---------------- PREVIEW & SHARE ---------------- */
 function openPreview(inv) {
