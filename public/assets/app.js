@@ -1081,25 +1081,48 @@ async function buildInvoiceSummaryText(invNo) {
   const cashier = cashiersCache.find(c => c.cashierId === invoice.cashierId);
   const revenue = Math.max((invoice.subtotal || 0) - (invoice.discount || 0), 0); // Harga Jual / Omset
   const hppItemsTotal = (purchases.items || []).reduce((s, it) => s + (it.totalCost || (it.qty || 0) * (it.costPrice || 0)), 0); // Harga Beli
-  const hppOthersTotal = (purchases.others || []).reduce((s, o) => s + (o.totalCost || 0), 0); // Ongkir/diskon (biaya lainnya)
+  const hppOthersTotal = (purchases.others || []).reduce((s, o) => s + (o.totalCost || 0), 0); // Ongkir/Diskon (biaya lainnya)
   const profit = revenue - (hppItemsTotal + hppOthersTotal); // Laba
 
   const beliAcc = accountNamesFromIds((purchases.items || []).map(it => it.accountId));
   const ongkirAcc = accountNamesFromIds((purchases.others || []).map(o => o.accountId));
   const terimaAcc = accountNamesFromIds((cashSummary.flows || []).filter(f => f.type === 'in').map(f => f.accountId));
 
+  const itemsSummary = (invoice.items || [])
+    .map(it => (it.qty ? it.qty + 'x ' : '') + it.desc).join(', ') || '-';
+  const description = itemsSummary + (invoice.clientName ? ' - ' + invoice.clientName : '');
+
+  const profitNote = buildProfitNote(revenue, hppItemsTotal, hppOthersTotal, profit);
+  const sep = '-'.repeat(60);
+
   return [
-    'Nomor pesanan : ' + orderNumberFromInvoice(invoice.invoiceNumber),
+    'Nomor Pesanan : ' + orderNumberFromInvoice(invoice.invoiceNumber),
+    'Deskripsi Pesanan : ' + description,
+    sep,
+    '',
     'Harga Beli : ' + formatMoney(hppItemsTotal),
     'Harga Jual : ' + formatMoney(revenue),
-    'Ongkir/diskon : ' + formatMoney(hppOthersTotal),
+    'Ongkir/Diskon : ' + formatMoney(hppOthersTotal),
     'Laba : ' + formatMoney(profit),
     'Cst : ' + (cashier ? cashier.name : '-'),
     '',
+    'Note : ' + profitNote,
+    sep,
     'Pembayaran Beli : ' + beliAcc,
-    'Pembayaran ongkir : ' + ongkirAcc,
+    'Pembayaran Ongkir/diskon : ' + ongkirAcc,
     'Penerimaan : ' + terimaAcc
   ].join('\n');
+}
+// Catatan otomatis kalau Laba minus — dihitung murni dari selisih angka yang ada
+// (Harga Beli & Ongkir/Diskon vs Harga Jual), bukan tebakan alasan bisnisnya.
+function buildProfitNote(revenue, hppItemsTotal, hppOthersTotal, profit) {
+  if (profit >= 0) return '-';
+  const deficit = Math.abs(profit);
+  const parts = [];
+  if (hppItemsTotal > 0) parts.push('Harga Beli ' + formatMoney(hppItemsTotal));
+  if (hppOthersTotal > 0) parts.push('Ongkir/Diskon ' + formatMoney(hppOthersTotal));
+  const costDesc = parts.length ? parts.join(' + ') : 'total modal';
+  return 'Minus ' + formatMoney(deficit) + ' — ' + costDesc + ' melebihi Harga Jual (' + formatMoney(revenue) + ').';
 }
 function copyInvoiceSummaryText(invNo) {
   if (!invNo) return;
