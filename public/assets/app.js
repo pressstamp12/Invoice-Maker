@@ -1093,7 +1093,7 @@ async function buildInvoiceSummaryText(invNo) {
   const description = itemsSummary + (invoice.clientName ? ' - ' + invoice.clientName : '');
 
   const profitNote = buildProfitNote(revenue, hppItemsTotal, hppOthersTotal, profit);
-  const sep = '-'.repeat(40);
+  const sep = '-'.repeat(30);
 
   return [
     'Nomor Pesanan : ' + orderNumberFromInvoice(invoice.invoiceNumber),
