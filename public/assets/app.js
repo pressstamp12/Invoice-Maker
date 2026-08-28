@@ -395,6 +395,7 @@ function initItemsTable() { addItemRow(); }
 function addItemRow(item) {
   itemCounter++;
   const tr = document.createElement('tr');
+  tr.className = 'item-row';
   tr.dataset.id = itemCounter;
   tr.innerHTML = `
     <td><input type="text" class="item-desc" list="itemsDatalist" placeholder="Nama produk/jasa" value="${item ? escapeHtml(item.desc) : ''}"></td>
@@ -403,11 +404,16 @@ function addItemRow(item) {
     <td><input type="number" class="item-price" min="0" step="any" value="${item ? item.price : 0}"></td>
     <td class="item-subtotal">${formatMoney(0)}</td>
     <td><button type="button" class="remove-item-btn" title="Hapus item">&times;</button></td>`;
+  const noteTr = document.createElement('tr');
+  noteTr.className = 'item-note-row';
+  noteTr.dataset.id = itemCounter;
+  noteTr.innerHTML = `<td colspan="6" style="padding-top:0"><input type="text" class="item-note" placeholder="Keterangan/catatan item ini (opsional)" value="${item && item.note ? escapeHtml(item.note) : ''}"></td>`;
   $('itemsBody').appendChild(tr);
+  $('itemsBody').appendChild(noteTr);
   tr.querySelector('.item-desc').addEventListener('change', () => onItemDescChange(tr));
   tr.querySelector('.item-qty').addEventListener('input', () => recalcRow(tr));
   tr.querySelector('.item-price').addEventListener('input', () => recalcRow(tr));
-  tr.querySelector('.remove-item-btn').addEventListener('click', () => { tr.remove(); recalcTotals(); });
+  tr.querySelector('.remove-item-btn').addEventListener('click', () => { tr.remove(); noteTr.remove(); recalcTotals(); });
   recalcRow(tr);
 }
 function onItemDescChange(tr) {
@@ -428,7 +434,7 @@ function recalcRow(tr) {
 }
 function recalcTotals() {
   let subtotal = 0;
-  document.querySelectorAll('#itemsBody tr').forEach(tr => {
+  document.querySelectorAll('#itemsBody tr.item-row').forEach(tr => {
     subtotal += (parseFloat(tr.querySelector('.item-qty').value) || 0) * (parseFloat(tr.querySelector('.item-price').value) || 0);
   });
   const discount = parseFloat(val('discount')) || 0;
@@ -445,12 +451,14 @@ function recalcTotals() {
 function onSubmitInvoice(e) {
   e.preventDefault();
   const items = [];
-  document.querySelectorAll('#itemsBody tr').forEach(tr => {
+  document.querySelectorAll('#itemsBody tr.item-row').forEach(tr => {
     const desc = tr.querySelector('.item-desc').value.trim();
     const qty = parseFloat(tr.querySelector('.item-qty').value) || 0;
     const unit = tr.querySelector('.item-unit').value.trim();
     const price = parseFloat(tr.querySelector('.item-price').value) || 0;
-    if (desc) items.push({ desc, qty, unit, price });
+    const noteRow = tr.nextElementSibling;
+    const note = (noteRow && noteRow.classList.contains('item-note-row')) ? noteRow.querySelector('.item-note').value.trim() : '';
+    if (desc) items.push({ desc, qty, unit, price, note });
   });
   if (!items.length) { toast('Tambahkan minimal 1 item', true); return; }
   const companyId = val('invoiceCompany');
@@ -1089,11 +1097,11 @@ async function buildInvoiceSummaryText(invNo) {
   const terimaAcc = accountNamesFromIds((cashSummary.flows || []).filter(f => f.type === 'in').map(f => f.accountId));
 
   const itemsSummary = (invoice.items || [])
-    .map(it => (it.qty ? it.qty + 'x ' : '') + it.desc).join(', ') || '-';
+    .map(it => (it.qty ? it.qty + 'x ' : '') + it.desc + (it.note ? ' [' + it.note + ']' : '')).join(', ') || '-';
   const description = itemsSummary + (invoice.clientName ? ' - ' + invoice.clientName : '');
 
   const profitNote = buildProfitNote(revenue, hppItemsTotal, hppOthersTotal, profit);
-  const sep = '-'.repeat(30);
+  const sep = '-'.repeat(60);
 
   return [
     'Nomor Pesanan : ' + orderNumberFromInvoice(invoice.invoiceNumber),
@@ -2016,14 +2024,22 @@ function openPayModal(inv, total) {
   $('payWarnBox').classList.add('hidden');
   $('payModalOverlay').classList.remove('hidden');
   // Cek dulu apakah invoice ini sudah pernah tercatat ada penerimaan — kalau iya,
-  // kemungkinan besar ini akan jadi double-input (di tempat Anda, Terima Bayar biasanya cuma 1x).
+  // input ini akan MENGGANTI catatan penerimaan sebelumnya (bukan menambah baru).
   run('getInvoiceCashSummary', [inv], summary => {
     if (summary && summary.paidIn > 0) {
       const inFlows = (summary.flows || []).filter(f => f.type === 'in');
       const nameOf = id => { const a = accountsCache.find(x => x.accountId === id); return a ? a.name : id; };
       const detail = inFlows.map(f => `• ${formatMoney(f.amount)} ke akun ${nameOf(f.accountId)} (${f.date})`).join('<br>');
-      $('payWarnBox').innerHTML = `⚠️ <strong>Invoice ini sudah tercatat ada penerimaan sebelumnya (total ${formatMoney(summary.paidIn)}):</strong><br>${detail}<br>Pastikan ini memang penerimaan tambahan/susulan, bukan salah pencet ulang.`;
+      $('payWarnBox').innerHTML = `⚠️ <strong>Invoice ini sudah tercatat ada penerimaan sebelumnya (total ${formatMoney(summary.paidIn)}):</strong><br>${detail}<br>Kalau disimpan, catatan penerimaan sebelumnya akan <strong>DIGANTI</strong> dengan input ini (bukan ditambah), supaya tidak dobel.`;
       $('payWarnBox').classList.remove('hidden');
+      // Isi form dengan data penerimaan yang sudah ada, supaya user sadar ini
+      // sebenarnya mengedit catatan lama, bukan bikin catatan baru.
+      const prevPayment = inFlows.find(f => f.sourceType === 'payment') || inFlows[0];
+      if (prevPayment) {
+        setVal('payDate', prevPayment.date);
+        setVal('payAccount', prevPayment.accountId);
+        setVal('payAmount', prevPayment.amount);
+      }
     }
   }, { loading: false });
 }
@@ -2035,7 +2051,7 @@ function savePayModal() {
   if (!payload.accountId) { toast('Pilih akun penerima. Tambahkan akun di tab Kas.', true); return; }
   if (payload.amount <= 0) { toast('Jumlah harus lebih dari 0', true); return; }
   if (!$('payWarnBox').classList.contains('hidden')) {
-    if (!confirm('Invoice ini sudah pernah tercatat ada penerimaan sebelumnya. Yakin mau tetap catat penerimaan baru ini?')) return;
+    if (!confirm('Invoice ini sudah pernah tercatat ada penerimaan sebelumnya. Catatan lama akan DIGANTI oleh input ini. Lanjutkan?')) return;
   }
   run('recordInvoicePayment', [payload], () => { toast('Penerimaan tersimpan'); closePayModal(); loadInvoiceList(); }, { lockKey: 'recordInvoicePayment:' + _payInvoiceNumber });
 }
