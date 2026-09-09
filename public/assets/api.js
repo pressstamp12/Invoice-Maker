@@ -20,6 +20,28 @@
   }
   function ok(x) { if (x.error) throw new Error(x.error.message); return x.data; }
 
+  /* Ambil SEMUA baris secara bertahap (1000 per batch).
+     PENTING: Supabase punya batas server "Max Rows" (default 1000) yang TIDAK bisa
+     dilewati hanya dengan .range() besar — server tetap memotong di 1000. Jadi satu-satunya
+     cara andal untuk data yang sudah >1000 baris (mis. tabel purchases & cash_flow)
+     adalah mengambilnya bertahap seperti ini sampai benar-benar habis. */
+  async function fetchAll(table, columns, applyFilters) {
+    const PAGE = 1000;
+    let from = 0, all = [];
+    for (;;) {
+      let q = sb.from(table).select(columns);
+      if (applyFilters) q = applyFilters(q);
+      const { data, error } = await q.range(from, from + PAGE - 1);
+      if (error) throw new Error(error.message);
+      const batch = data || [];
+      all = all.concat(batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+      if (from > 200000) break; // pengaman, jangan sampai loop tak berujung
+    }
+    return all;
+  }
+
   /* ============ ID GENERATION (pengganti nextId_) ============ */
   async function nextId(table, idCol, prefix, padLen) {
     const { data, error } = await sb.from(table).select(idCol);
@@ -218,10 +240,9 @@
 
   async function getInvoiceList() {
     const [invRows, purchases, cashiers, companies] = await Promise.all([
-      sb.from('invoices').select('invoice_number, invoice_date, client_name, total, status, subtotal, discount, company_id, cashier_id, created_at')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false }).range(0, 9999).then(ok),
-      sb.from('purchases').select('invoice_number,total_cost').range(0, 19999).then(ok),
+      fetchAll('invoices', 'invoice_number, invoice_date, client_name, total, status, subtotal, discount, company_id, cashier_id, created_at',
+        q => q.is('deleted_at', null).order('created_at', { ascending: false })),
+      fetchAll('purchases', 'invoice_number,total_cost'),
       getCashiers(), getCompanies()
     ]);
     const hppMap = {};
@@ -246,9 +267,8 @@
 
   async function getDeletedInvoices() {
     const [invRows, companies] = await Promise.all([
-      sb.from('invoices').select('invoice_number, invoice_date, client_name, total, status, company_id, deleted_at')
-        .not('deleted_at', 'is', null)
-        .order('deleted_at', { ascending: false }).range(0, 9999).then(ok),
+      fetchAll('invoices', 'invoice_number, invoice_date, client_name, total, status, company_id, deleted_at',
+        q => q.not('deleted_at', 'is', null).order('deleted_at', { ascending: false })),
       getCompanies()
     ]);
     return invRows.map(row => {
@@ -460,7 +480,7 @@
     return { success: true, quotationNumber: qNo, total };
   }
   async function getQuotationList() {
-    const data = ok(await sb.from('quotations').select('*').order('created_at', { ascending: false }).range(0, 9999));
+    const data = await fetchAll('quotations', '*', q => q.order('created_at', { ascending: false }));
     const [cashiers, companies] = await Promise.all([getCashiers(), getCompanies()]);
     return data.map(row => {
       const cashier = cashiers.find(c => c.cashierId === row.cashier_id);
@@ -762,7 +782,7 @@
   }
 
   async function getInvoiceNumbers() {
-    const data = ok(await sb.from('invoices').select('invoice_number, client_name').is('deleted_at', null).order('invoice_number', { ascending: false }).range(0, 9999));
+    const data = await fetchAll('invoices', 'invoice_number, client_name', q => q.is('deleted_at', null).order('invoice_number', { ascending: false }));
     return data.map(r => ({ invoiceNumber: r.invoice_number, clientName: r.client_name }));
   }
 
@@ -770,8 +790,9 @@
   async function getDashboardData(filterCashierId, onlyPaid) {
     const filter = filterCashierId || '';
     const [invRows, purchases, cashiersList, companiesList] = await Promise.all([
-      sb.from('invoices').select('invoice_number, invoice_date, discount, subtotal, total, status, company_id, cashier_id, items_json').is('deleted_at', null).range(0, 9999).then(ok),
-      sb.from('purchases').select('invoice_number,total_cost').range(0, 19999).then(ok),
+      fetchAll('invoices', 'invoice_number, invoice_date, discount, subtotal, total, status, company_id, cashier_id, items_json',
+        q => q.is('deleted_at', null)),
+      fetchAll('purchases', 'invoice_number,total_cost'),
       getCashiers(), getCompanies()
     ]);
     const hppMap = {};
@@ -905,7 +926,7 @@
   }
 
   async function getCashFlowRaw() {
-    const data = ok(await sb.from('cash_flow').select('*').order('date', { ascending: false }).range(0, 19999));
+    const data = await fetchAll('cash_flow', '*', q => q.order('date', { ascending: false }));
     return data.map(r => ({
       flowId: r.flow_id, date: fmtDate(r.date), type: r.type, accountId: r.account_id, toAccountId: r.to_account_id,
       amount: num(r.amount), category: r.category, note: r.note, invoiceNumber: r.invoice_number, sourceType: r.source_type || '', createdAt: r.created_at
