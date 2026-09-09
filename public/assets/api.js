@@ -220,8 +220,8 @@
     const [invRows, purchases, cashiers, companies] = await Promise.all([
       sb.from('invoices').select('invoice_number, invoice_date, client_name, total, status, subtotal, discount, company_id, cashier_id, created_at')
         .is('deleted_at', null)
-        .order('created_at', { ascending: false }).then(ok),
-      sb.from('purchases').select('invoice_number,total_cost').then(ok),
+        .order('created_at', { ascending: false }).range(0, 9999).then(ok),
+      sb.from('purchases').select('invoice_number,total_cost').range(0, 19999).then(ok),
       getCashiers(), getCompanies()
     ]);
     const hppMap = {};
@@ -248,7 +248,7 @@
     const [invRows, companies] = await Promise.all([
       sb.from('invoices').select('invoice_number, invoice_date, client_name, total, status, company_id, deleted_at')
         .not('deleted_at', 'is', null)
-        .order('deleted_at', { ascending: false }).then(ok),
+        .order('deleted_at', { ascending: false }).range(0, 9999).then(ok),
       getCompanies()
     ]);
     return invRows.map(row => {
@@ -460,7 +460,7 @@
     return { success: true, quotationNumber: qNo, total };
   }
   async function getQuotationList() {
-    const data = ok(await sb.from('quotations').select('*').order('created_at', { ascending: false }));
+    const data = ok(await sb.from('quotations').select('*').order('created_at', { ascending: false }).range(0, 9999));
     const [cashiers, companies] = await Promise.all([getCashiers(), getCompanies()]);
     return data.map(row => {
       const cashier = cashiers.find(c => c.cashierId === row.cashier_id);
@@ -762,7 +762,7 @@
   }
 
   async function getInvoiceNumbers() {
-    const data = ok(await sb.from('invoices').select('invoice_number, client_name').is('deleted_at', null).order('invoice_number', { ascending: false }));
+    const data = ok(await sb.from('invoices').select('invoice_number, client_name').is('deleted_at', null).order('invoice_number', { ascending: false }).range(0, 9999));
     return data.map(r => ({ invoiceNumber: r.invoice_number, clientName: r.client_name }));
   }
 
@@ -770,8 +770,8 @@
   async function getDashboardData(filterCashierId, onlyPaid) {
     const filter = filterCashierId || '';
     const [invRows, purchases, cashiersList, companiesList] = await Promise.all([
-      sb.from('invoices').select('invoice_number, invoice_date, discount, subtotal, total, status, company_id, cashier_id, items_json').is('deleted_at', null).then(ok),
-      sb.from('purchases').select('invoice_number,total_cost').then(ok),
+      sb.from('invoices').select('invoice_number, invoice_date, discount, subtotal, total, status, company_id, cashier_id, items_json').is('deleted_at', null).range(0, 9999).then(ok),
+      sb.from('purchases').select('invoice_number,total_cost').range(0, 19999).then(ok),
       getCashiers(), getCompanies()
     ]);
     const hppMap = {};
@@ -905,7 +905,7 @@
   }
 
   async function getCashFlowRaw() {
-    const data = ok(await sb.from('cash_flow').select('*').order('date', { ascending: false }));
+    const data = ok(await sb.from('cash_flow').select('*').order('date', { ascending: false }).range(0, 19999));
     return data.map(r => ({
       flowId: r.flow_id, date: fmtDate(r.date), type: r.type, accountId: r.account_id, toAccountId: r.to_account_id,
       amount: num(r.amount), category: r.category, note: r.note, invoiceNumber: r.invoice_number, sourceType: r.source_type || '', createdAt: r.created_at
@@ -1010,15 +1010,7 @@
     if (!p.invoiceNumber) throw new Error('Nomor invoice kosong.');
     if (!p.accountId) throw new Error('Pilih akun penerima.');
     if (num(p.amount) <= 0) throw new Error('Jumlah penerimaan harus > 0.');
-    // Terima Bayar dianggap 1x per invoice: kalau sebelumnya SUDAH ada catatan
-    // penerimaan (sourceType 'payment') untuk invoice ini, catatan itu DIGANTI
-    // (upsert pakai flow_id yang sama) — bukan ditambah baris baru — supaya
-    // tidak ada dobel penerimaan untuk invoice yang sama.
-    const existing = (await getCashFlowRaw())
-      .filter(f => f.invoiceNumber === p.invoiceNumber && f.type === 'in' && f.sourceType === 'payment')
-      .sort((a, b) => String(b.flowId).localeCompare(String(a.flowId)));
-    const flowId = existing.length ? existing[0].flowId : undefined;
-    await saveCashFlow({ flowId, date: p.date || '', type: 'in', accountId: p.accountId, amount: num(p.amount), category: 'Penerimaan Invoice', note: p.note || ('Pembayaran ' + p.invoiceNumber), invoiceNumber: p.invoiceNumber, sourceType: 'payment' });
+    await saveCashFlow({ date: p.date || '', type: 'in', accountId: p.accountId, amount: num(p.amount), category: 'Penerimaan Invoice', note: p.note || ('Pembayaran ' + p.invoiceNumber), invoiceNumber: p.invoiceNumber, sourceType: 'payment' });
     if (p.markPaid) await updateInvoiceStatus(p.invoiceNumber, 'Paid');
     return { success: true };
   }
