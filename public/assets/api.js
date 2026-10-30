@@ -25,12 +25,22 @@
      dilewati hanya dengan .range() besar — server tetap memotong di 1000. Jadi satu-satunya
      cara andal untuk data yang sudah >1000 baris (mis. tabel purchases & cash_flow)
      adalah mengambilnya bertahap seperti ini sampai benar-benar habis. */
+  // Kolom kunci unik per tabel — dipakai sebagai urutan tambahan supaya pembagian per-1000
+  // baris SELALU konsisten (tanpa ORDER BY, Postgres boleh mengembalikan urutan acak antar
+  // halaman sehingga ada baris yang terlewat/dobel).
+  const TABLE_KEYS = {
+    invoices: 'invoice_number', purchases: 'id', cash_flow: 'flow_id', quotations: 'quotation_number',
+    customers: 'customer_id', items: 'item_id', accounts: 'account_id', cashiers: 'cashier_id',
+    companies: 'company_id', bank_accounts: 'bank_id'
+  };
   async function fetchAll(table, columns, applyFilters) {
     const PAGE = 1000;
+    const key = TABLE_KEYS[table];
     let from = 0, all = [];
     for (;;) {
       let q = sb.from(table).select(columns);
       if (applyFilters) q = applyFilters(q);
+      if (key) q = q.order(key, { ascending: true });
       const { data, error } = await q.range(from, from + PAGE - 1);
       if (error) throw new Error(error.message);
       const batch = data || [];
@@ -43,17 +53,36 @@
   }
 
   /* ============ ID GENERATION (pengganti nextId_) ============ */
+  // Sebelumnya cuma membaca 1000 baris pertama (batas server Supabase) -> pada tabel besar
+  // seperti cash_flow, ID "berikutnya" bisa jatuh ke nomor yang SUDAH dipakai, lalu upsert
+  // menimpa transaksi lain secara diam-diam. Sekarang membaca SEMUA ID dengan prefix itu.
   async function nextId(table, idCol, prefix, padLen) {
-    const { data, error } = await sb.from(table).select(idCol);
-    if (error) throw new Error(error.message);
+    const rows = await fetchAll(table, idCol, q => q.like(idCol, prefix + '%'));
     let n = 1;
-    const nums = (data || [])
+    const nums = rows
       .map(r => r[idCol])
       .filter(id => typeof id === 'string' && id.indexOf(prefix) === 0)
       .map(id => parseInt(id.split('-').pop(), 10))
       .filter(x => !isNaN(x));
     if (nums.length) n = Math.max.apply(null, nums) + 1;
     return prefix + pad(n, padLen || 4);
+  }
+
+  // Simpan baris BARU dengan INSERT (bukan upsert), supaya kalau nomor ID ternyata bentrok
+  // (mis. dua kasir menyimpan bersamaan), database MENOLAK — bukan menimpa data lain.
+  // Kalau bentrok, buat nomor baru dan coba lagi (maks 5x).
+  async function insertWithFreshId(table, idCol, makeId, buildRow) {
+    let lastErr = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const id = await makeId();
+      const { error } = await sb.from(table).insert(buildRow(id));
+      if (!error) return id;
+      lastErr = error;
+      const dup = error.code === '23505' || /duplicate key/i.test(error.message || '');
+      if (!dup) throw new Error(error.message);
+      await new Promise(r => setTimeout(r, 150 + Math.random() * 350));
+    }
+    throw new Error('Gagal membuat nomor unik, coba lagi. (' + (lastErr && lastErr.message) + ')');
   }
 
   /* ============ AUTH ============ */
@@ -168,8 +197,7 @@
   /* ============ NOMOR INVOICE ============ */
   async function generateInvoiceNumber() {
     const year = new Date().getFullYear();
-    const { data, error } = await sb.from('invoices').select('invoice_number').like('invoice_number', `INV-${year}-%`);
-    if (error) throw new Error(error.message);
+    const data = await fetchAll('invoices', 'invoice_number', q => q.like('invoice_number', `INV-${year}-%`));
     let next = 1;
     const nums = (data || []).map(r => parseInt(r.invoice_number.split('-')[2], 10)).filter(n => !isNaN(n));
     if (nums.length) next = Math.max.apply(null, nums) + 1;
@@ -188,29 +216,28 @@
     const total = Math.max(subtotal - discount, 0) + taxAmount;
 
     const isEdit = !!(data.invoiceNumber && data.invoiceNumber.trim());
-    const invNo = isEdit ? data.invoiceNumber : await generateInvoiceNumber();
-
-    let createdAt = nowIso();
-    let existingStatus = null;
-    if (isEdit) {
-      const existing = await sb.from('invoices').select('created_at, status').eq('invoice_number', invNo).maybeSingle();
-      if (existing.data) {
-        if (existing.data.created_at) createdAt = existing.data.created_at;
-        existingStatus = existing.data.status;
-      }
-    }
-    // Form Edit Invoice tidak punya field status, jadi JANGAN timpa status
-    // yang sudah ada (mis. Paid) hanya karena data.status kosong.
-    const status = data.status || existingStatus || 'Unpaid';
-
-    ok(await sb.from('invoices').upsert({
-      invoice_number: invNo, invoice_date: data.invoiceDate || today(), due_date: data.dueDate || null,
+    const fields = {
+      invoice_date: data.invoiceDate || today(), due_date: data.dueDate || null,
       client_name: data.clientName, client_address: data.clientAddress || '', client_email: data.clientEmail || '',
       client_phone: data.clientPhone || '', items_json: data.items, notes: data.notes || '',
       tax_percent: taxPercent, discount, subtotal, tax_amount: taxAmount, total,
-      status, created_at: createdAt,
       company_id: data.companyId || null, cashier_id: data.cashierId || null
-    }));
+    };
+
+    let invNo;
+    if (isEdit) {
+      // EDIT: UPDATE baris yang memang ada. Status & created_at lama tidak disentuh
+      // (form Edit tidak punya field status — jangan sampai Lunas berubah jadi Belum).
+      invNo = data.invoiceNumber;
+      if (data.status) fields.status = data.status;
+      const { data: updated, error } = await sb.from('invoices').update(fields).eq('invoice_number', invNo).select('invoice_number');
+      if (error) throw new Error(error.message);
+      if (!updated || !updated.length) throw new Error('Invoice ' + invNo + ' tidak ditemukan, tidak ada yang diubah.');
+    } else {
+      // BARU: INSERT dengan nomor unik — kalau bentrok, database menolak (tidak menimpa).
+      invNo = await insertWithFreshId('invoices', 'invoice_number', generateInvoiceNumber,
+        id => Object.assign({ invoice_number: id, status: data.status || 'Unpaid', created_at: nowIso() }, fields));
+    }
 
     try { await upsertCustomerFromInvoice(data); } catch (e) { console.warn('Gagal simpan data customer:', e.message); }
 
@@ -445,8 +472,7 @@
   /* ============ PENAWARAN HARGA (Quotation) ============ */
   async function generateQuotationNumber() {
     const year = new Date().getFullYear();
-    const { data, error } = await sb.from('quotations').select('quotation_number').like('quotation_number', `QUO-${year}-%`);
-    if (error) throw new Error(error.message);
+    const data = await fetchAll('quotations', 'quotation_number', q => q.like('quotation_number', `QUO-${year}-%`));
     let next = 1;
     const nums = (data || []).map(r => parseInt(r.quotation_number.split('-')[2], 10)).filter(n => !isNaN(n));
     if (nums.length) next = Math.max.apply(null, nums) + 1;
@@ -461,21 +487,25 @@
     const taxAmount = Math.max(subtotal - discount, 0) * (taxPercent / 100);
     const total = Math.max(subtotal - discount, 0) + taxAmount;
     const isEdit = !!(data.quotationNumber && data.quotationNumber.trim());
-    const qNo = isEdit ? data.quotationNumber : await generateQuotationNumber();
-    let createdAt = nowIso(), existingStatus = null;
-    if (isEdit) {
-      const existing = await sb.from('quotations').select('created_at, status').eq('quotation_number', qNo).maybeSingle();
-      if (existing.data) { if (existing.data.created_at) createdAt = existing.data.created_at; existingStatus = existing.data.status; }
-    }
-    ok(await sb.from('quotations').upsert({
-      quotation_number: qNo, quotation_date: data.quotationDate || today(), valid_until: data.validUntil || null,
+    const fields = {
+      quotation_date: data.quotationDate || today(), valid_until: data.validUntil || null,
       client_name: data.clientName, client_address: data.clientAddress || '', client_email: data.clientEmail || '',
       client_phone: data.clientPhone || '', items_json: data.items, notes: data.notes || '',
       tax_percent: taxPercent, discount, subtotal, tax_amount: taxAmount, total,
-      status: data.status || existingStatus || 'Menunggu', created_at: createdAt,
       company_id: data.companyId || null, cashier_id: data.cashierId || null,
       attachments: data.attachments || []
-    }));
+    };
+    let qNo;
+    if (isEdit) {
+      qNo = data.quotationNumber;
+      if (data.status) fields.status = data.status;
+      const { data: updated, error } = await sb.from('quotations').update(fields).eq('quotation_number', qNo).select('quotation_number');
+      if (error) throw new Error(error.message);
+      if (!updated || !updated.length) throw new Error('Penawaran ' + qNo + ' tidak ditemukan, tidak ada yang diubah.');
+    } else {
+      qNo = await insertWithFreshId('quotations', 'quotation_number', generateQuotationNumber,
+        id => Object.assign({ quotation_number: id, status: data.status || 'Menunggu', created_at: nowIso() }, fields));
+    }
     try { await upsertCustomerFromInvoice(data); } catch (e) { console.warn('Gagal simpan data customer:', e.message); }
     return { success: true, quotationNumber: qNo, total };
   }
@@ -941,12 +971,20 @@
       if (!f.toAccountId) throw new Error('Pilih akun tujuan untuk transfer.');
       if (f.toAccountId === f.accountId) throw new Error('Akun asal dan tujuan tidak boleh sama.');
     }
-    const id = (f.flowId && String(f.flowId).trim()) ? f.flowId : await nextId('cash_flow', 'flow_id', 'CF-', 5);
-    ok(await sb.from('cash_flow').upsert({
-      flow_id: id, date: f.date || today(), type: f.type, account_id: f.accountId,
+    const fields = {
+      date: f.date || today(), type: f.type, account_id: f.accountId,
       to_account_id: (f.type === 'transfer' ? f.toAccountId : null), amount, category: f.category || '',
       note: f.note || '', invoice_number: f.invoiceNumber || null, source_type: f.sourceType || ''
-    }));
+    };
+    let id;
+    if (f.flowId && String(f.flowId).trim()) {
+      id = f.flowId;
+      ok(await sb.from('cash_flow').update(fields).eq('flow_id', id));
+    } else {
+      // Transaksi BARU selalu INSERT — tidak akan pernah menimpa transaksi lain lagi.
+      id = await insertWithFreshId('cash_flow', 'flow_id', () => nextId('cash_flow', 'flow_id', 'CF-', 5),
+        newId => Object.assign({ flow_id: newId }, fields));
+    }
     return { success: true, flowId: id };
   }
   async function deleteCashFlow(id) {
