@@ -37,6 +37,7 @@
         <button type="submit" id="loginSubmitBtn" class="btn-primary" style="width:100%;margin-top:6px">Masuk</button>
       </form>
       <p class="hint" style="text-align:center;margin-top:14px">Akun dibuat lewat Supabase Dashboard &gt; Authentication.</p>
+      <p class="hint app-version" style="text-align:center;margin:6px 0 0"></p>
     </div>
   </div>
 
@@ -44,7 +45,7 @@
   <div id="appRoot" class="app hidden">
     <header class="topbar">
       <div class="topbar-row">
-        <h1>🧾 Invoice Maker</h1>
+        <div><h1>🧾 Invoice Maker</h1><div class="app-version" style="font-size:11px;color:var(--muted);margin-top:2px"></div></div>
         <button id="logoutBtn" class="btn-secondary">Keluar</button>
       </div>
       <nav class="tabs">
@@ -370,6 +371,13 @@
         </div>
 
         <div class="card">
+          <h2>🔎 Cek Kelengkapan Pencatatan</h2>
+          <p class="hint">Menampilkan invoice <strong>Lunas</strong> yang belum dicatat Terima Bayar, HPP-nya belum diisi, atau HPP-nya belum dipilih akun kas. Ketuk tombol di tiap kartu untuk langsung melengkapi.</p>
+          <button type="button" id="auditCashBtn" class="btn-secondary">🔎 Cek Sekarang</button>
+          <div id="auditCashWrap" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card">
           <h2>Riwayat Arus Kas</h2>
           <div class="list-filters">
             <div class="lf-group">
@@ -624,8 +632,6 @@
         <button type="button" id="btnShareDrive" class="btn-secondary">🔗 Link PDF</button>
         <button type="button" id="btnShareJpgDrive" class="btn-secondary">🔗 Link JPG</button>
         <button type="button" id="btnShareWa" class="btn-secondary hidden">📲 Kirim WhatsApp</button>
-        <button type="button" id="btnCopyTextSummary" class="btn-secondary">📋 Copy Teks Ringkasan</button>
-        <button type="button" id="btnDownloadTextSummary" class="btn-secondary">📝 Download .txt</button>
       </div>
       <div id="downloadFallbackWrap" class="hidden" style="margin-top:8px">
         <a id="downloadFallbackLink" href="#" target="_blank" rel="noopener" class="btn-secondary" style="display:block;text-decoration:none;text-align:center;padding:10px 18px;border-radius:8px;">📄 Buka file</a>
