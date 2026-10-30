@@ -1079,6 +1079,37 @@
     await saveCashFlow({ date: p.date || '', type: 'out', accountId: p.accountId, amount: num(p.amount), category: p.category || 'Pembelian Bahan', note: p.note || ('Modal ' + (p.invoiceNumber || '')), invoiceNumber: p.invoiceNumber || '' });
     return { success: true };
   }
+  // Cek invoice LUNAS yang pencatatan kasnya belum lengkap:
+  // belum ada Terima Bayar, HPP belum diisi, atau HPP belum (semua) dipilih akun kasnya.
+  async function auditCashCompleteness() {
+    const [invRows, purchases, flows] = await Promise.all([
+      fetchAll('invoices', 'invoice_number, invoice_date, client_name, total',
+        q => q.eq('status', 'Paid').is('deleted_at', null).like('invoice_number', 'INV-%')),
+      fetchAll('purchases', 'invoice_number, total_cost'),
+      fetchAll('cash_flow', 'invoice_number, type, source_type, amount', q => q.not('invoice_number', 'is', null))
+    ]);
+    const hpp = {}, hppKas = {}, bayar = {};
+    purchases.forEach(p => { hpp[p.invoice_number] = (hpp[p.invoice_number] || 0) + num(p.total_cost); });
+    flows.forEach(f => {
+      if (f.source_type === 'hpp') hppKas[f.invoice_number] = (hppKas[f.invoice_number] || 0) + num(f.amount);
+      if (f.type === 'in') bayar[f.invoice_number] = (bayar[f.invoice_number] || 0) + num(f.amount);
+    });
+    const result = [];
+    invRows.forEach(r => {
+      const inv = r.invoice_number, problems = [];
+      if (!bayar[inv]) problems.push('payment');
+      if (hpp[inv] === undefined) problems.push('hpp_empty');
+      else if (!hppKas[inv]) problems.push('hpp_no_kas');
+      else if (hppKas[inv] + 0.5 < hpp[inv]) problems.push('hpp_partial');
+      if (problems.length) result.push({
+        invoiceNumber: inv, invoiceDate: fmtDate(r.invoice_date), clientName: r.client_name, total: num(r.total),
+        hppTotal: hpp[inv] || 0, hppKasTotal: hppKas[inv] || 0, paidIn: bayar[inv] || 0, problems
+      });
+    });
+    result.sort((a, b) => String(b.invoiceNumber).localeCompare(String(a.invoiceNumber)));
+    return { totalPaid: invRows.length, items: result };
+  }
+
   async function getInvoiceCashSummary(invNo) {
     const flows = (await getCashFlowRaw()).filter(f => f.invoiceNumber === invNo);
     let paidIn = 0, paidOut = 0;
@@ -1103,6 +1134,6 @@
     importExcelRows, getImportPreviewInfo,
     getDashboardData,
     getActiveAccounts, saveAccount, deleteAccount, getCashData, saveCashFlow, deleteCashFlow,
-    recordInvoicePayment, recordInvoiceExpense, getInvoiceCashSummary
+    recordInvoicePayment, recordInvoiceExpense, getInvoiceCashSummary, auditCashCompleteness
   };
 })();
