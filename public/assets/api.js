@@ -1069,7 +1069,17 @@
     if (!p.invoiceNumber) throw new Error('Nomor invoice kosong.');
     if (!p.accountId) throw new Error('Pilih akun penerima.');
     if (num(p.amount) <= 0) throw new Error('Jumlah penerimaan harus > 0.');
-    await saveCashFlow({ date: p.date || '', type: 'in', accountId: p.accountId, amount: num(p.amount), category: 'Penerimaan Invoice', note: p.note || ('Pembayaran ' + p.invoiceNumber), invoiceNumber: p.invoiceNumber, sourceType: 'payment' });
+    // Terima Bayar dianggap 1x per invoice: kalau sebelumnya SUDAH ada catatan
+    // penerimaan (sourceType 'payment') untuk invoice ini, catatan itu DIGANTI
+    // — bukan ditambah baris baru — supaya tidak ada dobel penerimaan.
+    // Caranya: simpan catatan baru dulu, BARU hapus catatan lama. Jadi kalau ada
+    // gangguan di tengah jalan, penerimaan tidak pernah hilang (paling buruk dobel).
+    // (Tidak memakai UPDATE, karena pengaman database melarang menimpa transaksi kas.)
+    const existing = await fetchAll('cash_flow', 'flow_id',
+      q => q.eq('invoice_number', p.invoiceNumber).eq('type', 'in').eq('source_type', 'payment'));
+    const saved = await saveCashFlow({ date: p.date || '', type: 'in', accountId: p.accountId, amount: num(p.amount), category: 'Penerimaan Invoice', note: p.note || ('Pembayaran ' + p.invoiceNumber), invoiceNumber: p.invoiceNumber, sourceType: 'payment' });
+    const oldIds = existing.map(r => r.flow_id).filter(id => id && id !== saved.flowId);
+    if (oldIds.length) ok(await sb.from('cash_flow').delete().in('flow_id', oldIds));
     if (p.markPaid) await updateInvoiceStatus(p.invoiceNumber, 'Paid');
     return { success: true };
   }

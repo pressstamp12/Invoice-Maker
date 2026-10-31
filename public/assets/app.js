@@ -124,6 +124,8 @@ function initApp() {
   $('btnShareJpgDrive').addEventListener('click', shareJpgDriveFromPreview);
   $('btnShareWa').addEventListener('click', shareWhatsApp);
   $('btnCopyLink').addEventListener('click', copyShareLink);
+  $('btnCopyTextSummary').addEventListener('click', () => copyInvoiceSummaryText(currentPreviewInv));
+  $('btnDownloadTextSummary').addEventListener('click', () => downloadInvoiceSummaryText(currentPreviewInv));
 
   $('logoutBtn').addEventListener('click', doLogout);
   $('auditCashBtn').addEventListener('click', runCashAudit);
@@ -139,7 +141,7 @@ function initApp() {
   loadGoogleCharts();
 }
 
-const APP_VERSION = '2026.10.30-v7';
+const APP_VERSION = '2026.10.31-v9';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'Versi ' + APP_VERSION; });
   $('loginForm').addEventListener('submit', doLogin);
@@ -396,6 +398,7 @@ function initItemsTable() { addItemRow(); }
 function addItemRow(item) {
   itemCounter++;
   const tr = document.createElement('tr');
+  tr.className = 'item-row';
   tr.dataset.id = itemCounter;
   tr.innerHTML = `
     <td><input type="text" class="item-desc" list="itemsDatalist" placeholder="Nama produk/jasa" value="${item ? escapeHtml(item.desc) : ''}"></td>
@@ -404,11 +407,16 @@ function addItemRow(item) {
     <td><input type="number" class="item-price" min="0" step="any" value="${item ? item.price : 0}"></td>
     <td class="item-subtotal">${formatMoney(0)}</td>
     <td><button type="button" class="remove-item-btn" title="Hapus item">&times;</button></td>`;
+  const noteTr = document.createElement('tr');
+  noteTr.className = 'item-note-row';
+  noteTr.dataset.id = itemCounter;
+  noteTr.innerHTML = `<td colspan="6" style="padding-top:0"><input type="text" class="item-note" placeholder="Keterangan/catatan item ini (opsional)" value="${item && item.note ? escapeHtml(item.note) : ''}"></td>`;
   $('itemsBody').appendChild(tr);
+  $('itemsBody').appendChild(noteTr);
   tr.querySelector('.item-desc').addEventListener('change', () => onItemDescChange(tr));
   tr.querySelector('.item-qty').addEventListener('input', () => recalcRow(tr));
   tr.querySelector('.item-price').addEventListener('input', () => recalcRow(tr));
-  tr.querySelector('.remove-item-btn').addEventListener('click', () => { tr.remove(); recalcTotals(); });
+  tr.querySelector('.remove-item-btn').addEventListener('click', () => { tr.remove(); noteTr.remove(); recalcTotals(); });
   recalcRow(tr);
 }
 function onItemDescChange(tr) {
@@ -429,7 +437,7 @@ function recalcRow(tr) {
 }
 function recalcTotals() {
   let subtotal = 0;
-  document.querySelectorAll('#itemsBody tr').forEach(tr => {
+  document.querySelectorAll('#itemsBody tr.item-row').forEach(tr => {
     subtotal += (parseFloat(tr.querySelector('.item-qty').value) || 0) * (parseFloat(tr.querySelector('.item-price').value) || 0);
   });
   const discount = parseFloat(val('discount')) || 0;
@@ -446,12 +454,14 @@ function recalcTotals() {
 function onSubmitInvoice(e) {
   e.preventDefault();
   const items = [];
-  document.querySelectorAll('#itemsBody tr').forEach(tr => {
+  document.querySelectorAll('#itemsBody tr.item-row').forEach(tr => {
     const desc = tr.querySelector('.item-desc').value.trim();
     const qty = parseFloat(tr.querySelector('.item-qty').value) || 0;
     const unit = tr.querySelector('.item-unit').value.trim();
     const price = parseFloat(tr.querySelector('.item-price').value) || 0;
-    if (desc) items.push({ desc, qty, unit, price });
+    const noteRow = tr.nextElementSibling;
+    const note = (noteRow && noteRow.classList.contains('item-note-row')) ? noteRow.querySelector('.item-note').value.trim() : '';
+    if (desc) items.push({ desc, qty, unit, price, note });
   });
   if (!items.length) { toast('Tambahkan minimal 1 item', true); return; }
   const companyId = val('invoiceCompany');
@@ -606,6 +616,7 @@ function renderInvoiceList() {
       </div>
       <div class="inv-actions">
         <button class="prev-btn" onclick="openPreview('${inv.invoiceNumber}')">👁️ Preview/Share</button>
+        <button onclick="copyInvoiceSummaryText('${inv.invoiceNumber}')">📋 Copy Teks</button>
         <button onclick="openPayModal('${inv.invoiceNumber}', ${Number(inv.total) || 0})">💵 Terima Bayar</button>
         <button onclick="openHppModal('${inv.invoiceNumber}')">💰 HPP</button>
         <button onclick="editInvoice('${inv.invoiceNumber}')">✏️ Edit</button>
@@ -730,6 +741,7 @@ function resetQuoForm(alsoResetFields) {
 function addQuoItemRow(item) {
   quoItemCounter++;
   const tr = document.createElement('tr');
+  tr.className = 'qitem-row';
   tr.innerHTML = `
     <td><input type="text" class="qitem-desc" list="itemsDatalist" placeholder="Nama produk/jasa" value="${item ? escapeHtml(item.desc) : ''}"></td>
     <td><input type="number" class="qitem-qty" min="0" step="any" value="${item ? item.qty : 1}"></td>
@@ -737,7 +749,11 @@ function addQuoItemRow(item) {
     <td><input type="number" class="qitem-price" min="0" step="any" value="${item ? item.price : 0}"></td>
     <td class="qitem-subtotal">${formatMoney(0)}</td>
     <td><button type="button" class="remove-item-btn">&times;</button></td>`;
+  const noteTr = document.createElement('tr');
+  noteTr.className = 'qitem-note-row';
+  noteTr.innerHTML = `<td colspan="6" style="padding-top:0"><input type="text" class="qitem-note" placeholder="Keterangan/catatan item ini (opsional)" value="${item && item.note ? escapeHtml(item.note) : ''}"></td>`;
   $('quoItemsBody').appendChild(tr);
+  $('quoItemsBody').appendChild(noteTr);
   tr.querySelector('.qitem-desc').addEventListener('change', () => {
     const desc = tr.querySelector('.qitem-desc').value.trim();
     const match = itemsCache.find(it => it.itemName.toLowerCase() === desc.toLowerCase());
@@ -750,7 +766,7 @@ function addQuoItemRow(item) {
   });
   tr.querySelector('.qitem-qty').addEventListener('input', () => recalcQuoRow(tr));
   tr.querySelector('.qitem-price').addEventListener('input', () => recalcQuoRow(tr));
-  tr.querySelector('.remove-item-btn').addEventListener('click', () => { tr.remove(); recalcQuoTotals(); });
+  tr.querySelector('.remove-item-btn').addEventListener('click', () => { tr.remove(); noteTr.remove(); recalcQuoTotals(); });
   recalcQuoRow(tr);
 }
 function recalcQuoRow(tr) {
@@ -761,7 +777,7 @@ function recalcQuoRow(tr) {
 }
 function recalcQuoTotals() {
   let subtotal = 0;
-  document.querySelectorAll('#quoItemsBody tr').forEach(tr => {
+  document.querySelectorAll('#quoItemsBody tr.qitem-row').forEach(tr => {
     subtotal += (parseFloat(tr.querySelector('.qitem-qty').value) || 0) * (parseFloat(tr.querySelector('.qitem-price').value) || 0);
   });
   const discount = parseFloat(val('quoDiscount')) || 0;
@@ -785,12 +801,14 @@ function onQuoClientNameChange() {
 function onSubmitQuotation(e) {
   e.preventDefault();
   const items = [];
-  document.querySelectorAll('#quoItemsBody tr').forEach(tr => {
+  document.querySelectorAll('#quoItemsBody tr.qitem-row').forEach(tr => {
     const desc = tr.querySelector('.qitem-desc').value.trim();
     const qty = parseFloat(tr.querySelector('.qitem-qty').value) || 0;
     const unit = tr.querySelector('.qitem-unit').value.trim();
     const price = parseFloat(tr.querySelector('.qitem-price').value) || 0;
-    if (desc) items.push({ desc, qty, unit, price });
+    const noteRow = tr.nextElementSibling;
+    const note = (noteRow && noteRow.classList.contains('qitem-note-row')) ? noteRow.querySelector('.qitem-note').value.trim() : '';
+    if (desc) items.push({ desc, qty, unit, price, note });
   });
   if (!items.length) { toast('Tambahkan minimal 1 item', true); return; }
   const companyId = val('quoCompany');
@@ -1051,6 +1069,104 @@ function saveHppModal() {
   }, { lockKey: 'savePurchases:' + hppCurrentInv });
 }
 function closeHppModal() { $('hppModalOverlay').classList.add('hidden'); }
+
+/* ---------------- RINGKASAN TEKS INVOICE (copy/download) ---------------- */
+// 400 invoice pertama masuk lewat Impor Excel dan sudah punya "nomor pesanan" asli
+// tertanam di nomor invoicenya sendiri (IMP-tahun-0001 s/d IMP-tahun-0400 = pesanan 1-400).
+// Invoice baru yang dibuat lewat form (INV-tahun-0001, dst) melanjutkan urutan itu,
+// jadi nomor pesanannya = urutan invoice + 400 (INV-...-0001 = pesanan 401).
+// Ganti angka ini kalau titik potongnya bukan 400.
+const ORDER_NUMBER_OFFSET = 400;
+function orderNumberFromInvoice(invNo) {
+  const m = /-([0-9]+)$/.exec(invNo || '');
+  const n = m ? parseInt(m[1], 10) : 0;
+  return (invNo || '').indexOf('IMP-') === 0 ? n : n + ORDER_NUMBER_OFFSET;
+}
+function accountNamesFromIds(ids) {
+  const uniq = Array.from(new Set((ids || []).filter(Boolean)));
+  if (!uniq.length) return '-';
+  return uniq.map(id => {
+    const a = accountsCache.find(x => x.accountId === id);
+    return a ? a.name : id;
+  }).join(', ');
+}
+async function buildInvoiceSummaryText(invNo) {
+  const [invoice, purchases, cashSummary] = await Promise.all([
+    window.API.getInvoiceByNumber(invNo),
+    window.API.getPurchasesByInvoice(invNo),
+    window.API.getInvoiceCashSummary(invNo)
+  ]);
+  const cashier = cashiersCache.find(c => c.cashierId === invoice.cashierId);
+  const revenue = Math.max((invoice.subtotal || 0) - (invoice.discount || 0), 0); // Harga Jual / Omset
+  const hppItemsTotal = (purchases.items || []).reduce((s, it) => s + (it.totalCost || (it.qty || 0) * (it.costPrice || 0)), 0); // Harga Beli
+  const hppOthersTotal = (purchases.others || []).reduce((s, o) => s + (o.totalCost || 0), 0); // Ongkir/Diskon (biaya lainnya)
+  const profit = revenue - (hppItemsTotal + hppOthersTotal); // Laba
+
+  const beliAcc = accountNamesFromIds((purchases.items || []).map(it => it.accountId));
+  const ongkirAcc = accountNamesFromIds((purchases.others || []).map(o => o.accountId));
+  const terimaAcc = accountNamesFromIds((cashSummary.flows || []).filter(f => f.type === 'in').map(f => f.accountId));
+
+  const itemsSummary = (invoice.items || [])
+    .map(it => (it.qty ? it.qty + 'x ' : '') + it.desc + (it.note ? ' [' + it.note + ']' : '')).join(', ') || '-';
+  const description = itemsSummary + (invoice.clientName ? ' - ' + invoice.clientName : '');
+
+  const profitNote = buildProfitNote(revenue, hppItemsTotal, hppOthersTotal, profit);
+  const sep = '-'.repeat(30);
+
+  return [
+    'Nomor Pesanan : ' + orderNumberFromInvoice(invoice.invoiceNumber),
+    'Deskripsi Pesanan : ' + description,
+    sep,
+    '',
+    'Harga Beli : ' + formatMoney(hppItemsTotal),
+    'Harga Jual : ' + formatMoney(revenue),
+    'Ongkir/Diskon : ' + formatMoney(hppOthersTotal),
+    'Laba : ' + formatMoney(profit),
+    'Cst : ' + (cashier ? cashier.name : '-'),
+    '',
+    'Note : ' + profitNote,
+    sep,
+    'Pembayaran Beli : ' + beliAcc,
+    'Pembayaran Ongkir/diskon : ' + ongkirAcc,
+    'Penerimaan : ' + terimaAcc
+  ].join('\n');
+}
+// Catatan otomatis kalau Laba minus — dihitung murni dari selisih angka yang ada
+// (Harga Beli & Ongkir/Diskon vs Harga Jual), bukan tebakan alasan bisnisnya.
+function buildProfitNote(revenue, hppItemsTotal, hppOthersTotal, profit) {
+  if (profit >= 0) return '-';
+  const deficit = Math.abs(profit);
+  const parts = [];
+  if (hppItemsTotal > 0) parts.push('Harga Beli ' + formatMoney(hppItemsTotal));
+  if (hppOthersTotal > 0) parts.push('Ongkir/Diskon ' + formatMoney(hppOthersTotal));
+  const costDesc = parts.length ? parts.join(' + ') : 'total modal';
+  return 'Minus ' + formatMoney(deficit) + ' — ' + costDesc + ' melebihi Harga Jual (' + formatMoney(revenue) + ').';
+}
+function copyInvoiceSummaryText(invNo) {
+  if (!invNo) return;
+  showLoading(true);
+  buildInvoiceSummaryText(invNo).then(text => {
+    showLoading(false);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => toast('Ringkasan ' + invNo + ' disalin'))
+        .catch(() => fallbackCopyText(text));
+    } else {
+      fallbackCopyText(text);
+    }
+  }).catch(err => { showLoading(false); toast(err.message, true); });
+}
+function downloadInvoiceSummaryText(invNo) {
+  if (!invNo) return;
+  showLoading(true);
+  buildInvoiceSummaryText(invNo).then(text => {
+    showLoading(false);
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    triggerDownload(url, 'Ringkasan-' + invNo + '.txt');
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast('Ringkasan ' + invNo + ' diunduh');
+  }).catch(err => { showLoading(false); toast(err.message, true); });
+}
 
 /* ---------------- PREVIEW & SHARE ---------------- */
 function openPreview(inv) {
@@ -1960,14 +2076,22 @@ function openPayModal(inv, total) {
   $('payWarnBox').classList.add('hidden');
   $('payModalOverlay').classList.remove('hidden');
   // Cek dulu apakah invoice ini sudah pernah tercatat ada penerimaan — kalau iya,
-  // kemungkinan besar ini akan jadi double-input (di tempat Anda, Terima Bayar biasanya cuma 1x).
+  // input ini akan MENGGANTI catatan penerimaan sebelumnya (bukan menambah baru).
   run('getInvoiceCashSummary', [inv], summary => {
     if (summary && summary.paidIn > 0) {
       const inFlows = (summary.flows || []).filter(f => f.type === 'in');
       const nameOf = id => { const a = accountsCache.find(x => x.accountId === id); return a ? a.name : id; };
       const detail = inFlows.map(f => `• ${formatMoney(f.amount)} ke akun ${nameOf(f.accountId)} (${f.date})`).join('<br>');
-      $('payWarnBox').innerHTML = `⚠️ <strong>Invoice ini sudah tercatat ada penerimaan sebelumnya (total ${formatMoney(summary.paidIn)}):</strong><br>${detail}<br>Pastikan ini memang penerimaan tambahan/susulan, bukan salah pencet ulang.`;
+      $('payWarnBox').innerHTML = `⚠️ <strong>Invoice ini sudah tercatat ada penerimaan sebelumnya (total ${formatMoney(summary.paidIn)}):</strong><br>${detail}<br>Kalau disimpan, catatan penerimaan sebelumnya akan <strong>DIGANTI</strong> dengan input ini (bukan ditambah), supaya tidak dobel.`;
       $('payWarnBox').classList.remove('hidden');
+      // Isi form dengan data penerimaan yang sudah ada, supaya user sadar ini
+      // sebenarnya mengedit catatan lama, bukan bikin catatan baru.
+      const prevPayment = inFlows.find(f => f.sourceType === 'payment') || inFlows[0];
+      if (prevPayment) {
+        setVal('payDate', prevPayment.date);
+        setVal('payAccount', prevPayment.accountId);
+        setVal('payAmount', prevPayment.amount);
+      }
     }
   }, { loading: false });
 }
@@ -1979,7 +2103,7 @@ function savePayModal() {
   if (!payload.accountId) { toast('Pilih akun penerima. Tambahkan akun di tab Kas.', true); return; }
   if (payload.amount <= 0) { toast('Jumlah harus lebih dari 0', true); return; }
   if (!$('payWarnBox').classList.contains('hidden')) {
-    if (!confirm('Invoice ini sudah pernah tercatat ada penerimaan sebelumnya. Yakin mau tetap catat penerimaan baru ini?')) return;
+    if (!confirm('Invoice ini sudah pernah tercatat ada penerimaan sebelumnya. Catatan lama akan DIGANTI oleh input ini. Lanjutkan?')) return;
   }
   run('recordInvoicePayment', [payload], () => { toast('Penerimaan tersimpan'); closePayModal(); loadInvoiceList(); refreshAuditIfShown(); }, { lockKey: 'recordInvoicePayment:' + _payInvoiceNumber });
 }

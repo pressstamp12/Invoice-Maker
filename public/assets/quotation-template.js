@@ -22,7 +22,7 @@ function attachmentsBlockHtml(attachments, title) {
 window.renderQuotationTemplate = function ({ quotation, company, cashier, currency, skipAttachments }) {
   const itemsRows = (quotation.items || []).map(item => `
     <tr>
-      <td class="desc">${escapeHtmlT(item.desc)}</td>
+      <td class="desc">${escapeHtmlT(item.desc)}${item.note ? `<div class="item-note">${escapeHtmlT(item.note)}</div>` : ''}</td>
       <td class="center">${item.qty}</td>
       <td class="center">${item.unit || '-'}</td>
       <td class="num">${currency} ${moneyT(item.price)}</td>
@@ -64,6 +64,7 @@ window.renderQuotationTemplate = function ({ quotation, company, cashier, curren
   table.items th { background: #1e3a5f; color: #fff; text-align: left; padding: 8px 10px; font-size: 12px; white-space: nowrap; }
   table.items td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; }
   table.items td.desc { word-break: break-word; }
+  table.items td.desc .item-note { font-size: 11px; color: #64748b; font-style: italic; margin-top: 2px; word-break: break-word; }
   table.items th.num, table.items td.num { text-align: right; white-space: nowrap; }
   table.items th.center, table.items td.center { text-align: center; }
   .totals { width: 280px; max-width: 100%; margin-left: auto; margin-bottom: 18px; }
