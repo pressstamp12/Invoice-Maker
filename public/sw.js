@@ -1,4 +1,4 @@
-const CACHE_NAME = 'invoice-maker-v7';
+const CACHE_NAME = 'invoice-maker-v9';
 const SHELL_FILES = [
   './',
   './index.html',
