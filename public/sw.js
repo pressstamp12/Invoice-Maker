@@ -1,4 +1,4 @@
-const CACHE_NAME = 'invoice-maker-v9';
+const CACHE_NAME = 'invoice-maker-v10';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const SHELL_FILES = [
   './assets/api.js',
   './assets/invoice-template.js',
   './assets/quotation-template.js',
+  './assets/delivery-note-template.js',
   './assets/app.js',
   './icons/icon-192.png',
   './icons/icon-512.png'
