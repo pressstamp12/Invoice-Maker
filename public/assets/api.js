@@ -267,20 +267,24 @@
   }
 
   async function getInvoiceList() {
-    const [invRows, purchases, cashiers, companies] = await Promise.all([
+    const [invRows, purchases, cashiers, companies, sjRows] = await Promise.all([
       fetchAll('invoices', 'invoice_number, invoice_date, client_name, total, status, subtotal, discount, company_id, cashier_id, created_at',
         q => q.is('deleted_at', null).order('created_at', { ascending: false })),
       fetchAll('purchases', 'invoice_number,total_cost'),
-      getCashiers(), getCompanies()
+      getCashiers(), getCompanies(),
+      fetchAll('delivery_notes', 'sj_number, invoice_number, status, share_token')
     ]);
     const hppMap = {};
     purchases.forEach(p => { hppMap[p.invoice_number] = (hppMap[p.invoice_number] || 0) + num(p.total_cost); });
+    const sjMap = {};
+    sjRows.forEach(s => { sjMap[s.invoice_number] = s; });
 
     return invRows.map(row => {
       const revenue = Math.max(num(row.subtotal) - num(row.discount), 0);
       const hppTotal = hppMap[row.invoice_number];
       const cashier = cashiers.find(c => c.cashierId === row.cashier_id);
       const company = companies.find(c => c.companyId === row.company_id);
+      const sj = sjMap[row.invoice_number];
       return {
         invoiceNumber: row.invoice_number, invoiceDate: fmtDate(row.invoice_date),
         clientName: row.client_name, total: row.total, status: row.status,
@@ -288,7 +292,10 @@
         companyId: row.company_id || '', companyName: company ? company.name : '',
         source: String(row.invoice_number).indexOf('IMP-') === 0 ? 'import' : 'manual',
         hppFilled: hppTotal !== undefined, hppTotal: hppTotal || 0,
-        profit: hppTotal !== undefined ? (revenue - hppTotal) : null
+        profit: hppTotal !== undefined ? (revenue - hppTotal) : null,
+        sjNumber: sj ? sj.sj_number : '',
+        sjStatus: sj ? sj.status : '',
+        sjToken: sj ? sj.share_token : ''
       };
     });
   }
@@ -1128,6 +1135,110 @@
     return { paidIn, paidOut, flows };
   }
 
+
+  /* ============ SURAT JALAN (DELIVERY NOTES) ============ */
+  function generateShareToken() {
+    const arr = new Uint8Array(16);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(arr);
+    else for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
+    return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  async function generateDeliveryNoteNumber() {
+    const year = new Date().getFullYear();
+    const data = await fetchAll('delivery_notes', 'sj_number', q => q.like('sj_number', `SJ-${year}-%`));
+    let next = 1;
+    const nums = (data || []).map(r => parseInt(r.sj_number.split('-')[2], 10)).filter(n => !isNaN(n));
+    if (nums.length) next = Math.max.apply(null, nums) + 1;
+    return 'SJ-' + year + '-' + pad(next, 4);
+  }
+  function mapDeliveryNote(r) {
+    if (!r) return null;
+    return {
+      sjNumber: r.sj_number, invoiceNumber: r.invoice_number,
+      deliveryDate: fmtDate(r.delivery_date), courierName: r.courier_name || '',
+      courierPhone: r.courier_phone || '', packageCount: r.package_count || '',
+      notes: r.notes || '', status: r.status || 'Dikirim',
+      shareToken: r.share_token, receiverName: r.receiver_name || '',
+      receiverSignatureUrl: r.receiver_signature_url || '',
+      proofPhotoUrl: r.proof_photo_url || '', receivedAt: r.received_at || null
+    };
+  }
+  async function getDeliveryNoteByInvoice(invNo) {
+    const { data, error } = await sb.from('delivery_notes').select('*').eq('invoice_number', invNo).maybeSingle();
+    if (error) throw new Error(error.message);
+    return mapDeliveryNote(data);
+  }
+  async function saveDeliveryNote(d) {
+    if (!d.invoiceNumber) throw new Error('Nomor invoice wajib ada.');
+    const existing = await getDeliveryNoteByInvoice(d.invoiceNumber);
+    const fields = {
+      delivery_date: d.deliveryDate || today(),
+      courier_name: (d.courierName || '').trim(),
+      courier_phone: (d.courierPhone || '').trim(),
+      package_count: (d.packageCount || '').trim(),
+      notes: (d.notes || '').trim()
+    };
+    if (existing) {
+      ok(await sb.from('delivery_notes').update(fields).eq('sj_number', existing.sjNumber));
+      return { success: true, sjNumber: existing.sjNumber, shareToken: existing.shareToken };
+    }
+    const token = generateShareToken();
+    const sjNo = await insertWithFreshId('delivery_notes', 'sj_number', generateDeliveryNoteNumber,
+      id => Object.assign({
+        sj_number: id, invoice_number: d.invoiceNumber, status: 'Dikirim',
+        share_token: token, created_at: nowIso()
+      }, fields));
+    return { success: true, sjNumber: sjNo, shareToken: token };
+  }
+  async function getDeliveryNoteBundle(invNo) {
+    const deliveryNote = await getDeliveryNoteByInvoice(invNo);
+    if (!deliveryNote) throw new Error('Surat jalan belum dibuat untuk invoice ini.');
+    const invoice = await getInvoiceByNumber(invNo);
+    const company = await getCompanyById(invoice.companyId);
+    const cashier = invoice.cashierId ? await getCashierById(invoice.cashierId) : null;
+    return { deliveryNote, invoice, company, cashier };
+  }
+  async function getDeliveryNotePreview(invNo) {
+    const bundle = await getDeliveryNoteBundle(invNo);
+    const html = window.renderDeliveryNoteTemplate(bundle);
+    return { deliveryNote: bundle.deliveryNote, invoice: bundle.invoice, html };
+  }
+  async function buildDeliveryNoteHtmlForCapture(invNo) {
+    const bundle = await getDeliveryNoteBundle(invNo);
+    const [logoData, sigData, recvSigData, photoData] = await Promise.all([
+      toDataUri(bundle.company.logoUrl),
+      bundle.cashier ? toDataUri(bundle.cashier.signatureUrl) : Promise.resolve(null),
+      toDataUri(bundle.deliveryNote.receiverSignatureUrl),
+      toDataUri(bundle.deliveryNote.proofPhotoUrl)
+    ]);
+    return {
+      sjNumber: bundle.deliveryNote.sjNumber,
+      html: window.renderDeliveryNoteTemplate({
+        deliveryNote: Object.assign({}, bundle.deliveryNote, { receiverSignatureUrl: recvSigData, proofPhotoUrl: photoData }),
+        invoice: bundle.invoice,
+        company: Object.assign({}, bundle.company, { logoUrl: logoData }),
+        cashier: bundle.cashier ? Object.assign({}, bundle.cashier, { signatureUrl: sigData }) : null
+      })
+    };
+  }
+  async function generateDeliveryNotePdf(invNo) {
+    const { sjNumber, html } = await buildDeliveryNoteHtmlForCapture(invNo);
+    const canvas = await withTimeout(renderHtmlToCanvas(html), 20000, 'Membuat PDF Surat Jalan');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'px', format: [canvas.width / 2, canvas.height / 2] });
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width / 2, canvas.height / 2);
+    return { filename: sjNumber + '.pdf', base64: pdf.output('datauristring').split(',')[1] };
+  }
+  async function generateDeliveryNoteJpg(invNo) {
+    const { sjNumber, html } = await buildDeliveryNoteHtmlForCapture(invNo);
+    const canvas = await withTimeout(renderHtmlToCanvas(html), 20000, 'Membuat JPG Surat Jalan');
+    return { filename: sjNumber + '.jpg', dataUrl: canvas.toDataURL('image/jpeg', 0.92) };
+  }
+  async function saveDeliveryNotePdfToDrive(invNo) {
+    const res = await generateDeliveryNotePdf(invNo);
+    return uploadToStorage('sj-pdf/' + res.filename, b64ToBlob(res.base64, 'application/pdf'), 'application/pdf');
+  }
+
   /* ============ EXPORT ============ */
   window.API = {
     signIn, signOut, getSession, onAuthChange,
@@ -1145,6 +1256,8 @@
     importExcelRows, getImportPreviewInfo,
     getDashboardData,
     getActiveAccounts, saveAccount, deleteAccount, getCashData, saveCashFlow, deleteCashFlow,
-    recordInvoicePayment, recordInvoiceExpense, getInvoiceCashSummary, auditCashCompleteness
+    recordInvoicePayment, recordInvoiceExpense, getInvoiceCashSummary, auditCashCompleteness,
+    getDeliveryNoteByInvoice, saveDeliveryNote, getDeliveryNotePreview,
+    generateDeliveryNotePdf, generateDeliveryNoteJpg, saveDeliveryNotePdfToDrive,
   };
 })();
