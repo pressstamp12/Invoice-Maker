@@ -2250,3 +2250,143 @@ function toast(msg, isError) {
   t.textContent = msg; t.className = 'toast show' + (isError ? ' error' : '');
   setTimeout(() => { t.className = 'toast'; }, 3000);
 }
+
+
+/* ---------------- SURAT JALAN (DIGITAL POD) ---------------- */
+let _sjCurrentInv = '';
+let _sjCurrentData = null;
+
+function initSjUI() {
+  const form = $('sjForm');
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = '1';
+  form.addEventListener('submit', onSubmitSjForm);
+  $('sjFormCloseBtn').addEventListener('click', closeSjFormModal);
+  $('sjFormCancelBtn').addEventListener('click', closeSjFormModal);
+
+  $('sjPreviewCloseBtn').addEventListener('click', closeSjPreviewModal);
+  $('sjBtnCopyPodLink').addEventListener('click', () => copyInputValue('sjPodLinkInput', 'Link Surat Jalan disalin'));
+  $('sjBtnShareWaPod').addEventListener('click', shareSjPodWhatsApp);
+  $('sjBtnRefreshStatus').addEventListener('click', () => openSjPreview(_sjCurrentInv));
+  $('sjBtnEditInfo').addEventListener('click', () => { closeSjPreviewModal(); openSjFormModal(_sjCurrentInv); });
+  $('sjBtnDownloadPdf').addEventListener('click', downloadSjPdf);
+  $('sjBtnDownloadJpg').addEventListener('click', downloadSjJpg);
+  $('sjBtnSharePdfLink').addEventListener('click', shareSjPdfLink);
+  $('sjBtnCopyPdfLink').addEventListener('click', () => copyInputValue('sjSharePdfInput', 'Link PDF disalin'));
+}
+
+function buildSjPodUrl(token) {
+  return new URL('sj.html?token=' + encodeURIComponent(token), window.location.href).href;
+}
+function copyInputValue(inputId, msg) {
+  const input = $(inputId);
+  if (!input) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(input.value).then(() => toast(msg)).catch(() => fallbackCopyText(input.value));
+  } else {
+    input.select(); input.setSelectionRange(0, 99999);
+    try { document.execCommand('copy'); toast(msg); } catch (e) { toast('Salin manual', true); }
+  }
+}
+
+function openSjFormModal(invNo) {
+  _sjCurrentInv = invNo;
+  setTxt('sjFormInvNumber', invNo);
+  $('sjForm').reset();
+  setVal('sjDate', todayStr());
+  $('sjFormModalOverlay').classList.remove('hidden');
+
+  run('getDeliveryNoteByInvoice', [invNo], existing => {
+    if (existing) {
+      setVal('sjDate', existing.deliveryDate || todayStr());
+      setVal('sjCourierName', existing.courierName || '');
+      setVal('sjCourierPhone', existing.courierPhone || '');
+      setVal('sjPackageCount', existing.packageCount || '');
+      setVal('sjNotes', existing.notes || '');
+    }
+  }, { loading: false });
+}
+function closeSjFormModal() { $('sjFormModalOverlay').classList.add('hidden'); }
+
+function onSubmitSjForm(e) {
+  e.preventDefault();
+  const payload = {
+    invoiceNumber: _sjCurrentInv,
+    deliveryDate: val('sjDate') || todayStr(),
+    courierName: val('sjCourierName'),
+    courierPhone: val('sjCourierPhone'),
+    packageCount: val('sjPackageCount'),
+    notes: val('sjNotes')
+  };
+  run('saveDeliveryNote', [payload], res => {
+    toast('Surat Jalan ' + res.sjNumber + ' siap dibagikan');
+    closeSjFormModal();
+    loadInvoiceList();
+    openSjPreview(_sjCurrentInv);
+  }, { lockKey: 'saveSj:' + _sjCurrentInv });
+}
+
+function openSjPreview(invNo) {
+  _sjCurrentInv = invNo;
+  setTxt('sjPreviewNumber', 'Memuat...');
+  $('sjSharePdfBox').classList.add('hidden');
+  const wrap = $('sjPreviewFrameWrap');
+  wrap.innerHTML = '<p class="muted">Memuat preview Surat Jalan...</p>';
+  $('sjPreviewModalOverlay').classList.remove('hidden');
+
+  run('getDeliveryNotePreview', [invNo], res => {
+    _sjCurrentData = res.deliveryNote;
+    const sj = res.deliveryNote;
+    setTxt('sjPreviewNumber', sj.sjNumber);
+    setVal('sjPodLinkInput', buildSjPodUrl(sj.shareToken));
+
+    const infoBox = $('sjStatusInfoBox');
+    const isDone = sj.status === 'Diterima';
+    if (isDone) {
+      const waktu = sj.receivedAt ? new Date(sj.receivedAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+      infoBox.style.background = '#dcfce7';
+      infoBox.style.color = '#166534';
+      infoBox.innerHTML = `✅ <strong>Sudah Diterima</strong> oleh <strong>${escapeHtml(sj.receiverName || '-')}</strong> pada ${escapeHtml(waktu)}.`;
+    } else {
+      infoBox.style.background = '#fef3c7';
+      infoBox.style.color = '#92400e';
+      infoBox.innerHTML = `🚚 <strong>Status: Dikirim</strong> — Bagikan link di bawah ke kurir atau penerima untuk tanda tangan &amp; konfirmasi terima barang.`;
+    }
+    show('sjBtnEditInfo', !isDone);
+
+    const iframe = document.createElement('iframe');
+    wrap.innerHTML = ''; wrap.appendChild(iframe);
+    iframe.contentDocument.open(); iframe.contentDocument.write(res.html); iframe.contentDocument.close();
+    setTimeout(() => fitPreviewIframe(iframe), 60);
+  }, { onErr: err => { wrap.innerHTML = '<p class="muted">Gagal memuat.</p>'; toast(err.message, true); } });
+}
+function closeSjPreviewModal() { $('sjPreviewModalOverlay').classList.add('hidden'); }
+
+function shareSjPodWhatsApp() {
+  if (!_sjCurrentData) return;
+  const link = val('sjPodLinkInput');
+  const msg = encodeURIComponent(
+    `Halo, berikut Surat Jalan Digital *${_sjCurrentData.sjNumber}* (Ref: ${_sjCurrentData.invoiceNumber}).\n\n` +
+    `Mohon cek barang saat diterima, lalu buka link berikut untuk tanda tangan & konfirmasi penerimaan:\n${link}`
+  );
+  window.open('https://wa.me/?text=' + msg, '_blank');
+}
+function downloadSjPdf() {
+  run('generateDeliveryNotePdf', [_sjCurrentInv], res => {
+    triggerDownload('data:application/pdf;base64,' + res.base64, res.filename);
+    toast('PDF Surat Jalan diunduh');
+  });
+}
+function downloadSjJpg() {
+  run('generateDeliveryNoteJpg', [_sjCurrentInv], res => {
+    triggerDownload(res.dataUrl, res.filename);
+    toast('JPG Surat Jalan diunduh');
+  });
+}
+function shareSjPdfLink() {
+  run('saveDeliveryNotePdfToDrive', [_sjCurrentInv], res => {
+    setVal('sjSharePdfInput', res.url);
+    $('sjSharePdfBox').classList.remove('hidden');
+    toast('Link PDF arsip siap dibagikan');
+  });
+}
