@@ -30,6 +30,7 @@
   // halaman sehingga ada baris yang terlewat/dobel).
   const TABLE_KEYS = {
     invoices: 'invoice_number', purchases: 'id', cash_flow: 'flow_id', quotations: 'quotation_number',
+    delivery_notes: 'sj_number',
     customers: 'customer_id', items: 'item_id', accounts: 'account_id', cashiers: 'cashier_id',
     companies: 'company_id', bank_accounts: 'bank_id'
   };
