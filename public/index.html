@@ -762,6 +762,69 @@
     </div>
   </div>
 
+<!-- MODAL: BUAT / EDIT SURAT JALAN -->
+  <div id="sjFormModalOverlay" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>🚚 Surat Jalan — <span id="sjFormInvNumber"></span></h2>
+        <button type="button" id="sjFormCloseBtn" class="modal-close">&times;</button>
+      </div>
+      <p class="hint" id="sjFormInfo">Data klien & rincian barang otomatis disalin dari invoice (tanpa harga).</p>
+      <form id="sjForm">
+        <div class="field"><label>Tanggal Kirim</label><input type="date" id="sjDate" required></div>
+        <div class="grid-2">
+          <div class="field"><label>Nama Kurir / Pengirim (opsional)</label><input type="text" id="sjCourierName" placeholder="mis. Budi / Kurir Toko"></div>
+          <div class="field"><label>No. HP Kurir / Plat (opsional)</label><input type="text" id="sjCourierPhone" placeholder="mis. 0812xxxx / B 1234 XY"></div>
+        </div>
+        <div class="field"><label>Jumlah Koli / Paket (opsional)</label><input type="text" id="sjPackageCount" placeholder="mis. 2 dus / 3 roll"></div>
+        <div class="field"><label>Catatan Pengiriman (opsional)</label><textarea id="sjNotes" rows="2" placeholder="mis. Barang mudah pecah / hubungi penerima sebelum sampai"></textarea></div>
+        <div class="actions">
+          <button type="submit" class="btn-primary">💾 Simpan &amp; Buka Surat Jalan</button>
+          <button type="button" id="sjFormCancelBtn" class="btn-secondary">Batal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: PREVIEW & LINK KONFIRMASI SURAT JALAN -->
+  <div id="sjPreviewModalOverlay" class="modal-overlay hidden">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2>🚚 Surat Jalan — <span id="sjPreviewNumber"></span></h2>
+        <button type="button" id="sjPreviewCloseBtn" class="modal-close">&times;</button>
+      </div>
+
+      <div id="sjStatusInfoBox" style="border-radius:10px;padding:10px 12px;font-size:12.5px;margin:8px 0;line-height:1.5"></div>
+
+      <div class="field" style="margin-bottom:8px">
+        <label>Link Surat Jalan Digital (untuk Kurir / Penerima — tanpa login)</label>
+        <div class="share-link" style="margin-top:0">
+          <input type="text" id="sjPodLinkInput" readonly>
+          <button type="button" id="sjBtnCopyPodLink" class="btn-secondary">📋 Salin</button>
+        </div>
+      </div>
+
+      <div class="actions" style="margin-bottom:10px">
+        <button type="button" id="sjBtnShareWaPod" class="btn-primary">📲 Kirim Link via WhatsApp</button>
+        <button type="button" id="sjBtnRefreshStatus" class="btn-secondary">🔄 Cek Status Terbaru</button>
+        <button type="button" id="sjBtnEditInfo" class="btn-secondary">✏️ Edit Info Kirim</button>
+      </div>
+
+      <div id="sjPreviewFrameWrap" class="preview-wrap"><p class="muted">Memuat preview...</p></div>
+
+      <div class="actions preview-actions">
+        <button type="button" id="sjBtnDownloadPdf" class="btn-primary">⬇️ Download PDF</button>
+        <button type="button" id="sjBtnDownloadJpg" class="btn-secondary">🖼️ Download JPG</button>
+        <button type="button" id="sjBtnSharePdfLink" class="btn-secondary">🔗 Link PDF Arsip</button>
+      </div>
+      <div id="sjSharePdfBox" class="share-link hidden">
+        <input type="text" id="sjSharePdfInput" readonly>
+        <button type="button" id="sjBtnCopyPdfLink" class="btn-secondary">Salin</button>
+      </div>
+    </div>
+  </div>
+
+  
   <div id="toast" class="toast"></div>
   <div id="loadingOverlay" class="loading-overlay hidden"><div class="spinner"></div></div>
 
@@ -769,6 +832,7 @@
   <script src="assets/api.js" defer></script>
   <script src="assets/invoice-template.js" defer></script>
   <script src="assets/quotation-template.js" defer></script>
+  <script src="assets/delivery-note-template.js" defer></script>
   <script src="assets/app.js" defer></script>
 </body>
 </html>
