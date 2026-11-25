@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Surat Jalan Digital</title>
+  <meta name="theme-color" content="#1e3a5f">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Segoe UI', Roboto, Arial, sans-serif; background: #f1f5f9; color: #0f172a; padding: 16px 12px 48px; }
+    .wrap { max-width: 680px; margin: 0 auto; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(15,23,42,.06); }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 3px solid #1e3a5f; padding-bottom: 12px; margin-bottom: 14px; }
+    .company { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
+    .company img { max-height: 48px; max-width: 100px; object-fit: contain; }
+    .company h2 { margin: 0 0 3px; font-size: 16px; color: #1e3a5f; }
+    .company p { margin: 1px 0; font-size: 11.5px; color: #64748b; }
+    .doc-title { text-align: right; flex-shrink: 0; }
+    .doc-title h1 { margin: 0; font-size: 18px; color: #1e3a5f; letter-spacing: 1px; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-top: 6px; }
+    .badge.sent { background: #fef3c7; color: #b45309; }
+    .badge.done { background: #dcfce7; color: #16a34a; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; font-size: 12.5px; }
+    .meta h4 { margin: 0 0 4px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: #64748b; }
+    .meta p { margin: 2px 0; word-break: break-word; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    th { background: #1e3a5f; color: #fff; text-align: left; padding: 8px; font-size: 12px; }
+    td { padding: 8px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; vertical-align: top; }
+    th.c, td.c { text-align: center; }
+    .item-note { font-size: 11px; color: #64748b; font-style: italic; margin-top: 2px; }
+    .note-box { background: #f8fafc; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: #334155; }
+    .section-title { margin: 0 0 12px; font-size: 15px; color: #1e3a5f; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 5px; }
+    .field input[type="text"] { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; font-family: inherit; }
+    .sig-wrap { border: 1.5px dashed #94a3b8; border-radius: 12px; background: #fff; overflow: hidden; position: relative; }
+    canvas#sigCanvas { display: block; width: 100%; height: 190px; touch-action: none; cursor: crosshair; }
+    .sig-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; color: #94a3b8; font-size: 13px; }
+    .sig-tools { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+    .btn-sm { padding: 6px 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-size: 12px; cursor: pointer; font-weight: 600; }
+    .btn-confirm { width: 100%; padding: 14px; border: none; border-radius: 12px; background: #16a34a; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+    .btn-confirm:disabled { opacity: .6; cursor: not-allowed; }
+    .photo-preview { max-width: 100%; max-height: 220px; border-radius: 10px; margin-top: 8px; display: block; border: 1px solid #e2e8f0; }
+    .done-banner { background: #dcfce7; border: 1px solid #86efac; color: #166534; border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+    .done-banner strong { font-size: 15px; display: block; margin-bottom: 4px; }
+    .proof-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+    .proof-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; text-align: center; background: #f8fafc; }
+    .proof-box img { max-width: 100%; max-height: 150px; object-fit: contain; border-radius: 6px; background: #fff; }
+    .proof-box .lbl { font-size: 11px; color: #64748b; margin-bottom: 6px; font-weight: 600; }
+    .center-msg { text-align: center; padding: 48px 16px; color: #64748b; }
+    .hidden { display: none !important; }
+    @media (max-width: 480px) {
+      .meta, .proof-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="loadingBox" class="card center-msg">Memuat Surat Jalan...</div>
+    <div id="errorBox" class="card center-msg hidden"></div>
+
+    <div id="contentWrap" class="hidden">
+      <div class="card">
+        <div class="header">
+          <div class="company">
+            <img id="cmpLogo" class="hidden" alt="logo">
+            <div>
+              <h2 id="cmpName">-</h2>
+              <p id="cmpAddress"></p>
+              <p id="cmpContact"></p>
+            </div>
+          </div>
+          <div class="doc-title">
+            <h1>SURAT JALAN</h1>
+            <div id="statusBadge" class="badge sent">DIKIRIM</div>
+          </div>
+        </div>
+
+        <div class="meta">
+          <div>
+            <h4>Dikirim Kepada</h4>
+            <p><strong id="clientName">-</strong></p>
+            <p id="clientAddress"></p>
+            <p id="clientPhone"></p>
+          </div>
+          <div>
+            <h4>Detail Pengiriman</h4>
+            <p>No. SJ: <strong id="sjNumber">-</strong></p>
+            <p>Ref. Invoice: <strong id="invNumber">-</strong></p>
+            <p>Tgl Kirim: <strong id="deliveryDate">-</strong></p>
+            <p id="courierLine" class="hidden"></p>
+            <p id="packageLine" class="hidden"></p>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th class="c" style="width:36px">No</th>
+              <th>Nama Barang</th>
+              <th class="c" style="width:60px">Qty</th>
+              <th class="c" style="width:76px">Satuan</th>
+            </tr>
+          </thead>
+          <tbody id="itemsBody"></tbody>
+        </table>
+
+        <div id="notesBox" class="note-box hidden"></div>
+      </div>
+
+      <!-- STATUS: BELUM DITERIMA -> FORM KONFIRMASI WAJIB -->
+      <div id="confirmCard" class="card hidden">
+        <h3 class="section-title">✍️ Konfirmasi Penerimaan Barang</h3>
+        <form id="confirmForm">
+          <div class="field">
+            <label for="receiverName">Nama Penerima *</label>
+            <input type="text" id="receiverName" placeholder="Tulis nama lengkap penerima barang" required>
+          </div>
+
+          <div class="field">
+            <label>Tanda Tangan Penerima *</label>
+            <div class="sig-wrap">
+              <canvas id="sigCanvas"></canvas>
+              <div id="sigHint" class="sig-hint">Tanda tangan di sini pakai jari</div>
+            </div>
+            <div class="sig-tools">
+              <span style="font-size:11.5px;color:#64748b">Wajib diisi sebelum konfirmasi</span>
+              <button type="button" id="clearSigBtn" class="btn-sm">Hapus TTD</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="proofPhotoInput">Foto Bukti Barang Diterima (opsional)</label>
+            <input type="file" id="proofPhotoInput" accept="image/*" capture="environment">
+            <img id="proofPhotoPreview" class="photo-preview hidden" alt="preview foto">
+            <button type="button" id="clearPhotoBtn" class="btn-sm hidden" style="margin-top:6px">Hapus Foto</button>
+          </div>
+
+          <button type="submit" id="confirmBtn" class="btn-confirm">✅ Konfirmasi Barang Diterima</button>
+        </form>
+      </div>
+
+      <!-- STATUS: SUDAH DITERIMA -> READ ONLY -->
+      <div id="doneCard" class="card hidden">
+        <div class="done-banner">
+          <strong>✅ Barang Telah Diterima</strong>
+          <div id="doneInfo" style="font-size:13px"></div>
+        </div>
+        <div class="proof-grid">
+          <div class="proof-box">
+            <div class="lbl">Tanda Tangan Penerima</div>
+            <img id="doneSigImg" alt="tanda tangan penerima">
+            <div id="doneReceiverName" style="font-size:12.5px;font-weight:700;margin-top:6px"></div>
+          </div>
+          <div id="donePhotoBox" class="proof-box hidden">
+            <div class="lbl">Foto Bukti Penerimaan</div>
+            <img id="donePhotoImg" alt="foto bukti terima">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/supabase-config.js"></script>
+  <script>
+    (function () {
+      const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+      const $ = id => document.getElementById(id);
+      const token = new URLSearchParams(window.location.search).get('token') || '';
+      let sjData = null;
+      let hasSigned = false;
+      let selectedPhotoFile = null;
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+      function fmtDateTime(iso) {
+        if (!iso) return '-';
+        try {
+          return new Date(iso).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+        } catch (e) { return iso; }
+      }
+      function showError(msg) {
+        $('loadingBox').classList.add('hidden');
+        $('contentWrap').classList.add('hidden');
+        $('errorBox').textContent = msg;
+        $('errorBox').classList.remove('hidden');
+      }
+
+      /* ---------- SIGNATURE CANVAS ---------- */
+      let ctx, drawing = false, lastX = 0, lastY = 0;
+      function initCanvas() {
+        const canvas = $('sigCanvas');
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(rect.width, 280) * ratio;
+        canvas.height = 190 * ratio;
+        ctx = canvas.getContext('2d');
+        ctx.scale(ratio, ratio);
+        ctx.lineWidth = 2.6;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#0f172a';
+
+        const getPos = e => {
+          const r = canvas.getBoundingClientRect();
+          return { x: e.clientX - r.left, y: e.clientY - r.top };
+        };
+        canvas.addEventListener('pointerdown', e => {
+          e.preventDefault();
+          canvas.setPointerCapture(e.pointerId);
+          drawing = true;
+          const p = getPos(e);
+          lastX = p.x; lastY = p.y;
+          ctx.beginPath();
+          ctx.moveTo(lastX, lastY);
+          ctx.lineTo(lastX + 0.1, lastY + 0.1);
+          ctx.stroke();
+          hasSigned = true;
+          $('sigHint').classList.add('hidden');
+        });
+        canvas.addEventListener('pointermove', e => {
+          if (!drawing) return;
+          e.preventDefault();
+          const p = getPos(e);
+          ctx.beginPath();
+          ctx.moveTo(lastX, lastY);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+          lastX = p.x; lastY = p.y;
+        });
+        const stop = () => { drawing = false; };
+        canvas.addEventListener('pointerup', stop);
+        canvas.addEventListener('pointercancel', stop);
+
+        $('clearSigBtn').addEventListener('click', () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          hasSigned = false;
+          $('sigHint').classList.remove('hidden');
+        });
+      }
+
+      function canvasToPngBlob() {
+        return new Promise(resolve => {
+          const src = $('sigCanvas');
+          const tmp = document.createElement('canvas');
+          tmp.width = src.width; tmp.height = src.height;
+          const tctx = tmp.getContext('2d');
+          tctx.fillStyle = '#ffffff';
+          tctx.fillRect(0, 0, tmp.width, tmp.height);
+          tctx.drawImage(src, 0, 0);
+          tmp.toBlob(blob => resolve(blob), 'image/png');
+        });
+      }
+
+      /* ---------- KOMPRESI FOTO BUKTI (OPSIONAL) ---------- */
+      function compressPhoto(file) {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          const url = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            const maxDim = 1280;
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+              else { w = Math.round(w * maxDim / h); h = maxDim; }
+            }
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0, w, h);
+            c.toBlob(blob => blob ? resolve(blob) : reject(new Error('Gagal memproses foto')), 'image/jpeg', 0.78);
+          };
+          img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('File foto tidak valid')); };
+          img.src = url;
+        });
+      }
+
+      async function uploadPodFile(prefix, blob, ext, contentType) {
+        const path = 'sj-pod/' + prefix + '-' + sjData.sjNumber.replace(/[^a-zA-Z0-9_-]/g, '') + '-' + Date.now() + '.' + ext;
+        const { error } = await sb.storage.from('invoice-files').upload(path, blob, { upsert: true, contentType });
+        if (error) throw new Error('Gagal upload file: ' + error.message);
+        return sb.storage.from('invoice-files').getPublicUrl(path).data.publicUrl;
+      }
+
+      function renderData(d) {
+        sjData = d;
+        $('loadingBox').classList.add('hidden');
+        $('contentWrap').classList.remove('hidden');
+
+        if (d.company.logoUrl) {
+          $('cmpLogo').src = d.company.logoUrl;
+          $('cmpLogo').classList.remove('hidden');
+        }
+        $('cmpName').textContent = d.company.name || '-';
+        $('cmpAddress').textContent = d.company.address || '';
+        $('cmpContact').textContent = [d.company.phone ? 'Telp: ' + d.company.phone : '', d.company.email || ''].filter(Boolean).join(' · ');
+
+        $('clientName').textContent = d.clientName || '-';
+        $('clientAddress').textContent = d.clientAddress || '';
+        $('clientPhone').textContent = d.clientPhone || '';
+
+        $('sjNumber').textContent = d.sjNumber;
+        $('invNumber').textContent = d.invoiceNumber;
+        $('deliveryDate').textContent = d.deliveryDate || '-';
+        if (d.courierName || d.courierPhone) {
+          $('courierLine').innerHTML = 'Kurir: <strong>' + esc([d.courierName, d.courierPhone].filter(Boolean).join(' · ')) + '</strong>';
+          $('courierLine').classList.remove('hidden');
+        }
+        if (d.packageCount) {
+          $('packageLine').innerHTML = 'Jumlah Koli/Paket: <strong>' + esc(d.packageCount) + '</strong>';
+          $('packageLine').classList.remove('hidden');
+        }
+
+        $('itemsBody').innerHTML = (d.items || []).map((it, idx) => `
+          <tr>
+            <td class="c">${idx + 1}</td>
+            <td>${esc(it.desc)}${it.note ? `<div class="item-note">${esc(it.note)}</div>` : ''}</td>
+            <td class="c"><strong>${it.qty}</strong></td>
+            <td class="c">${esc(it.unit || '-')}</td>
+          </tr>`).join('');
+
+        if (d.notes) {
+          $('notesBox').innerHTML = '<strong>Catatan Pengiriman:</strong> ' + esc(d.notes);
+          $('notesBox').classList.remove('hidden');
+        }
+
+        const isDone = d.status === 'Diterima';
+        const badge = $('statusBadge');
+        badge.textContent = isDone ? 'DITERIMA' : 'DIKIRIM';
+        badge.className = 'badge ' + (isDone ? 'done' : 'sent');
+
+        if (isDone) {
+          $('confirmCard').classList.add('hidden');
+          $('doneCard').classList.remove('hidden');
+          $('doneInfo').textContent = 'Diterima oleh ' + (d.receiverName || '-') + ' pada ' + fmtDateTime(d.receivedAt);
+          $('doneSigImg').src = d.receiverSignatureUrl || '';
+          $('doneReceiverName').textContent = d.receiverName || '-';
+          if (d.proofPhotoUrl) {
+            $('donePhotoImg').src = d.proofPhotoUrl;
+            $('donePhotoBox').classList.remove('hidden');
+          }
+        } else {
+          $('doneCard').classList.add('hidden');
+          $('confirmCard').classList.remove('hidden');
+          setTimeout(initCanvas, 50);
+        }
+      }
+
+      $('proofPhotoInput').addEventListener('change', e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        selectedPhotoFile = file;
+        const preview = $('proofPhotoPreview');
+        preview.src = URL.createObjectURL(file);
+        preview.classList.remove('hidden');
+        $('clearPhotoBtn').classList.remove('hidden');
+      });
+      $('clearPhotoBtn').addEventListener('click', () => {
+        selectedPhotoFile = null;
+        $('proofPhotoInput').value = '';
+        $('proofPhotoPreview').classList.add('hidden');
+        $('clearPhotoBtn').classList.add('hidden');
+      });
+
+      $('confirmForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const receiverName = $('receiverName').value.trim();
+        if (!receiverName) { alert('Nama penerima wajib diisi.'); return; }
+        if (!hasSigned) { alert('Mohon bubuhkan tanda tangan terlebih dahulu.'); return; }
+
+        const btn = $('confirmBtn');
+        btn.disabled = true;
+        btn.textContent = 'Menyimpan konfirmasi...';
+        try {
+          const sigBlob = await canvasToPngBlob();
+          const sigUrl = await uploadPodFile('sig', sigBlob, 'png', 'image/png');
+
+          let photoUrl = '';
+          if (selectedPhotoFile) {
+            btn.textContent = 'Mengunggah foto bukti...';
+            const photoBlob = await compressPhoto(selectedPhotoFile);
+            photoUrl = await uploadPodFile('photo', photoBlob, 'jpg', 'image/jpeg');
+          }
+
+          btn.textContent = 'Mengonfirmasi penerimaan...';
+          const { data, error } = await sb.rpc('confirm_delivery_note', {
+            p_token: token,
+            p_receiver_name: receiverName,
+            p_signature_url: sigUrl,
+            p_proof_photo_url: photoUrl
+          });
+          if (error) throw new Error(error.message);
+          if (!data || !data.success) throw new Error((data && data.error) || 'Gagal mengonfirmasi.');
+
+          await loadDeliveryNote();
+        } catch (err) {
+          alert(err.message || 'Terjadi kesalahan, silakan coba lagi.');
+          btn.disabled = false;
+          btn.textContent = '✅ Konfirmasi Barang Diterima';
+        }
+      });
+
+      async function loadDeliveryNote() {
+        if (!token) { showError('Link Surat Jalan tidak valid (token tidak ditemukan).'); return; }
+        const { data, error } = await sb.rpc('get_delivery_note_by_token', { p_token: token });
+        if (error) { showError('Gagal memuat Surat Jalan: ' + error.message); return; }
+        if (!data || !data.found) { showError('Surat Jalan tidak ditemukan atau sudah dihapus.'); return; }
+        renderData(data);
+      }
+
+      loadDeliveryNote();
+    })();
+  </script>
+</body>
+</html>
