@@ -137,11 +137,12 @@ function initApp() {
   initSimUI();
   initCatalogUI();
   initQuoUI();
+  initSjUI();
 
   loadGoogleCharts();
 }
 
-const APP_VERSION = '2026.10.31-v9';
+const APP_VERSION = '2026.11.25-v10';
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.app-version').forEach(el => { el.textContent = 'Versi ' + APP_VERSION; });
   $('loginForm').addEventListener('submit', doLogin);
