@@ -602,6 +602,14 @@ function renderInvoiceList() {
     const srcBadge = inv.source === 'import'
       ? '<span class="acc-badge other" style="margin-left:6px">Impor</span>'
       : '<span class="acc-badge safe" style="margin-left:6px">App</span>';
+
+    // <--- BARU: menentukan tampilan tombol Surat Jalan sesuai statusnya
+    const sjBtnHtml = !inv.sjNumber
+      ? `<button onclick="openSjFormModal('${inv.invoiceNumber}')">🚚 Buat Surat Jalan</button>`
+      : (inv.sjStatus === 'Diterima'
+          ? `<button style="color:var(--success);border-color:#bbf7d0;font-weight:600" onclick="openSjPreview('${inv.invoiceNumber}')">✅ SJ (Diterima)</button>`
+          : `<button style="color:#b45309;border-color:#fde68a;font-weight:600" onclick="openSjPreview('${inv.invoiceNumber}')">🚚 SJ (Dikirim)</button>`);
+
     return `
     <div class="inv-card">
       <div class="inv-card-top">
@@ -617,6 +625,7 @@ function renderInvoiceList() {
       </div>
       <div class="inv-actions">
         <button class="prev-btn" onclick="openPreview('${inv.invoiceNumber}')">👁️ Preview/Share</button>
+        ${sjBtnHtml}
         <button onclick="copyInvoiceSummaryText('${inv.invoiceNumber}')">📋 Copy Teks</button>
         <button onclick="openPayModal('${inv.invoiceNumber}', ${Number(inv.total) || 0})">💵 Terima Bayar</button>
         <button onclick="openHppModal('${inv.invoiceNumber}')">💰 HPP</button>
